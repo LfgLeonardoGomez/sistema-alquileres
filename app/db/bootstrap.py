@@ -21,6 +21,7 @@ from app.db.base import Base
 # new model import here as it's created.
 from app.models import client as _client  # noqa: F401
 from app.models import property as _property  # noqa: F401
+from app.models import reservation as _reservation  # noqa: F401
 from app.models import tenant as _tenant  # noqa: F401
 from app.models import user as _user  # noqa: F401
 
@@ -32,7 +33,7 @@ MIGRATOR_ROLE = "alquileres_migrator"
 # other table added to Base.metadata MUST be listed here in the same commit
 # that creates it -- test_rls_structural.py is the safety net that catches
 # a table created without RLS.
-TENANT_SCOPED_TABLES: tuple[str, ...] = ("users", "properties", "clients")
+TENANT_SCOPED_TABLES: tuple[str, ...] = ("users", "properties", "clients", "reservations")
 
 
 def create_extensions(engine: Engine) -> None:

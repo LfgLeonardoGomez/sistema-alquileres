@@ -50,6 +50,12 @@ def not_found(detail: str = "Not found") -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
 
+def invalid(detail: str = "Invalid request") -> HTTPException:
+    """Application-enforced 422 for a rule that is not a DB constraint --
+    e.g. rejecting a reservation on a soft-deleted property (design D8)."""
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
+
+
 # SQLSTATE -> (HTTP status, stable machine-readable code, human detail).
 _SQLSTATE_MAPPING: dict[str, tuple[int, str, str]] = {
     "23P01": (status.HTTP_409_CONFLICT, "dates_unavailable", "Dates are not available"),

@@ -134,27 +134,27 @@ design.md's existing open item for D7's pricing wording.
 
 ## Phase 4: Reservations (PR 4, ~450 lines) — core invariant
 
-- [ ] 4.1 `app/models/reservation.py`: ORM — `id`, `tenant_id`, `property_id`, `client_id`, `check_in DATE`, `check_out DATE`, `status`, `price_per_night NUMERIC(12,2)` nullable, `price_total NUMERIC(12,2)` nullable, `created_at`; composite FKs to `properties`/`clients`; `CHECK num_nonnulls(price_per_night, price_total) = 1`; `CHECK check_out - check_in BETWEEN 1 AND 60`. No `EXCLUDE` yet.
-- [ ] 4.2 Register `reservations` model on `Base` (table, CHECKs, composite FKs); add to `TENANT_SCOPED_TABLES` in `app/db/bootstrap.py` (RLS ENABLE+FORCE+policy+grants, D12 amendment — no migration file); re-run `test_rls_structural.py` -> green
-- [ ] 4.3 [RED] `tests/test_reservation_overlap.py::test_overlapping_dates_rejected` — reservation A, then overlapping reservation B on same property; currently succeeds (no `EXCLUDE` yet) -> test fails
-- [ ] 4.4 [GREEN] Amend `0005_reservations.py`: add `EXCLUDE USING gist (property_id WITH =, daterange(check_in, check_out, '[)') WITH &&) WHERE (status <> 'cancelled')`
-- [ ] 4.5 `app/errors.py`: map SQLSTATE `23P01` (exclusion_violation) -> 409 `{"code": "dates_unavailable"}`
-- [ ] 4.6 `app/services/reservations.py`: `create_reservation()` calls `session.flush()` explicitly before returning, so the constraint violation is still catchable as a 409 inside the handler (D6)
-- [ ] 4.7 Re-run 4.3 -> green (409 returned end-to-end)
-- [ ] 4.8 [TEST] `tests/test_reservation_overlap.py` — adjacency accepted (`check_in == existing check_out`); cancel-then-rebook succeeds (cancelled rows excluded from the constraint predicate)
-- [ ] 4.9 [TEST] `tests/test_reservation_concurrency.py` — two separate real DB connections book identical nights on the same property concurrently -> exactly one 201, one 409
-- [ ] 4.10 `app/schemas/reservation.py`: `ReservationCreate`/`ReservationRead` — `price_per_night` XOR `price_total` input; no `total`/`completed` fields stored; no `ge=date.today()` or equivalent anywhere
-- [ ] 4.11 [RED] `tests/test_reservation_pricing.py` — per-night pricing computes `total = rate * nights`; stay-total pricing returns the entered value; both or neither price field supplied -> 422; extending dates on a per-night reservation rescales the total; extending dates on a stay-total reservation does not
-- [ ] 4.12 [GREEN] `app/services/reservations.py`: `effective_total()` = `COALESCE(price_total, price_per_night * (check_out - check_in))`; wire into `ReservationRead` as a `computed_field`
-- [ ] 4.13 [RED] `tests/test_reservation_dates.py` — 0 nights and 61 nights -> 422; a fully-past stay is accepted; an in-progress stay (check-in past, check-out future) is accepted
-- [ ] 4.14 [GREEN] Confirm no future-date validation exists anywhere (Pydantic, CHECK, or service layer) — only the 1-60 night CHECK and the `EXCLUDE` constraint gate dates
-- [ ] 4.15 `app/api/routers/reservations.py`: `POST`/`GET`/`PATCH /reservations`, `POST /reservations/{id}/cancel`
-- [ ] 4.16 [RED] `tests/test_reservation_status.py` — cancel sets `status = cancelled`; `is_completed` derived `True` once `check_out` has passed on a non-cancelled reservation; a cancelled reservation is never completed
-- [ ] 4.17 [GREEN] `app/services/dates.py`: `today_ar()` via `ZoneInfo("America/Argentina/Buenos_Aires")`; wire `is_completed` computed_field
-- [ ] 4.18 [RED] `tests/test_inactive_property_reservation.py` — `POST` reservation targeting a soft-deleted property -> 422; its pre-existing reservations remain readable/editable
-- [ ] 4.19 [GREEN] `app/services/reservations.py`: reject creation when target `property.deleted_at IS NOT NULL`
-- [ ] 4.20 [TEST] `tests/test_isolation_reservations.py` — 3-tenant seed, one test per reservation endpoint asserting cross-tenant access -> 404
-- [ ] 4.21 `tests/test_schema_no_derived_columns.py`: `pg_catalog` assertion — `reservations` table has no `total` column and no `completed` column
+- [x] 4.1 `app/models/reservation.py`: ORM — `id`, `tenant_id`, `property_id`, `client_id`, `check_in DATE`, `check_out DATE`, `status`, `price_per_night NUMERIC(12,2)` nullable, `price_total NUMERIC(12,2)` nullable, `created_at`; composite FKs to `properties`/`clients`; `CHECK num_nonnulls(price_per_night, price_total) = 1`; `CHECK check_out - check_in BETWEEN 1 AND 60`. No `EXCLUDE` yet.
+- [x] 4.2 Register `reservations` model on `Base` (table, CHECKs, composite FKs); add to `TENANT_SCOPED_TABLES` in `app/db/bootstrap.py` (RLS ENABLE+FORCE+policy+grants, D12 amendment — no migration file); re-run `test_rls_structural.py` -> green
+- [x] 4.3 [RED] `tests/test_reservation_overlap.py::test_overlapping_dates_rejected` — reservation A, then overlapping reservation B on same property; currently succeeds (no `EXCLUDE` yet) -> test fails
+- [x] 4.4 [GREEN] **Stale reference amended**: no `0005_reservations.py` exists (Alembic deferred, D12 amendment). Added `ExcludeConstraint` directly to `Reservation.__table_args__` in `app/models/reservation.py`: `EXCLUDE USING gist (property_id WITH =, daterange(check_in, check_out, '[)') WITH &&) WHERE (status <> 'cancelled')`; rebuilt via `docker compose run --rm api python -m scripts.reset_db`
+- [x] 4.5 `app/errors.py`: SQLSTATE `23P01` (exclusion_violation) -> 409 `{"code": "dates_unavailable"}` — already present in the dispatch table (added ahead of schedule in Phase 3); confirmed exercised end-to-end by 4.3/4.7 for the first time
+- [x] 4.6 `app/services/reservations.py`: `create_reservation()` calls `session.flush()` explicitly before returning, so the constraint violation is still catchable as a 409 inside the handler (D6). **Deviation**: also built the full `app/api/routers/reservations.py` (`POST`/`GET` list/`GET` by id/`PATCH`/cancel) and wired it into `app/main.py` at this point, ahead of task 4.15's formal placement — required so 4.3/4.7's "409 returned end-to-end", 4.9's real HTTP 201/409 assertions, 4.11's PATCH-based rescale tests, and 4.16's cancel-based status tests are all genuine HTTP round-trips, not raw-session-level checks. Task 4.15 is kept as its own checkbox marking the point the full CRUD surface is confirmed complete and exercised, not the point it was first written.
+- [x] 4.7 Re-run 4.3 -> green (409 returned end-to-end, confirmed via real `TestClient` HTTP call, not a mocked session)
+- [x] 4.8 [TEST] `tests/test_reservation_overlap.py` — adjacency accepted (`check_in == existing check_out`); cancel-then-rebook succeeds (cancelled rows excluded from the constraint predicate)
+- [x] 4.9 [TEST] `tests/test_reservation_concurrency.py` — two separate real DB connections book identical nights on the same property concurrently -> exactly one 201, one 409
+- [x] 4.10 `app/schemas/reservation.py`: `ReservationCreate`/`ReservationRead` — `price_per_night` XOR `price_total` input; no `total`/`completed` fields stored; no `ge=date.today()` or equivalent anywhere
+- [x] 4.11 [RED] `tests/test_reservation_pricing.py` — per-night pricing computes `total = rate * nights`; stay-total pricing returns the entered value; both or neither price field supplied -> 422; extending dates on a per-night reservation rescales the total; extending dates on a stay-total reservation does not
+- [x] 4.12 [GREEN] `app/services/reservations.py`: `effective_total()` = `COALESCE(price_total, price_per_night * (check_out - check_in))`; wire into `ReservationRead` as a `computed_field`
+- [x] 4.13 [RED] `tests/test_reservation_dates.py` — 0 nights and 61 nights -> 422; a fully-past stay is accepted; an in-progress stay (check-in past, check-out future) is accepted
+- [x] 4.14 [GREEN] Confirm no future-date validation exists anywhere (Pydantic, CHECK, or service layer) — only the 1-60 night CHECK and the `EXCLUDE` constraint gate dates
+- [x] 4.15 `app/api/routers/reservations.py`: `POST`/`GET`/`PATCH /reservations`, `POST /reservations/{id}/cancel` — full CRUD, built incrementally from 4.6 onward (see deviation note there)
+- [x] 4.16 [RED] `tests/test_reservation_status.py` — cancel sets `status = cancelled`; `is_completed` derived `True` once `check_out` has passed on a non-cancelled reservation; a cancelled reservation is never completed
+- [x] 4.17 [GREEN] `app/services/dates.py`: `today_ar()` via `ZoneInfo("America/Argentina/Buenos_Aires")`; wire `is_completed` computed_field
+- [x] 4.18 [RED] `tests/test_inactive_property_reservation.py` — `POST` reservation targeting a soft-deleted property -> 422; its pre-existing reservations remain readable/editable
+- [x] 4.19 [GREEN] `app/services/reservations.py`: reject creation when target `property.deleted_at IS NOT NULL`
+- [x] 4.20 [TEST] `tests/test_isolation_reservations.py` — 3-tenant seed, one test per reservation endpoint asserting cross-tenant access -> 404
+- [x] 4.21 `tests/test_schema_no_derived_columns.py`: `pg_catalog` assertion — `reservations` table has no `total` column and no `completed` column
 
 ## Phase 5: Payments (PR 5, ~250 lines)
 
