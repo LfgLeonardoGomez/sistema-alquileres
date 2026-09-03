@@ -56,6 +56,7 @@ class ReservationRead(BaseModel):
     status: str
     price_per_night: Decimal | None
     price_total: Decimal | None
+    paid_amount: Decimal
     created_at: datetime
 
     @computed_field  # type: ignore[prop-decorator]
@@ -67,6 +68,14 @@ class ReservationRead(BaseModel):
             check_in=self.check_in,
             check_out=self.check_out,
         )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def balance(self) -> Decimal:
+        """Design D7: derived in Python from two scalars already in hand
+        (`effective_total`, `paid_amount`) -- never a stored column (see
+        `tests/test_schema_no_derived_columns.py`)."""
+        return self.effective_total - self.paid_amount
 
     @computed_field  # type: ignore[prop-decorator]
     @property

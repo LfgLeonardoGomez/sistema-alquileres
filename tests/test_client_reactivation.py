@@ -8,15 +8,17 @@ already be pointing at. That id-stability property is exactly what a
 `reservations.client_id` foreign key depends on to survive a reactivation
 cycle.
 
-DEFERRED (Phase 4): the `reservations` table does not exist yet, so this
-test cannot literally attach a reservation and assert its FK still points
-at the reactivated client afterward. Once Phase 4 lands, extend this test
-to: seed two reservations for the client, soft-delete the client, delete
-its now-orphaned-from-active-listing state, reactivate via the same phone,
-and assert both reservations' `client_id` still equals the original id
-(task 3.13's full scope; task 5.12 re-confirms this once payments/balance
-also read through the same client row).
+Task 5.12: the Phase 3 deferred assertion (task 3.13) is now exercised for
+real -- `reservations` and `payments` both exist as of Phase 4/5, so
+`test_reservations_and_their_payments_survive_client_reactivation` below
+seeds real reservations (with a payment) for a client, soft-deletes and
+reactivates it, and asserts every reservation's `client_id` -- and its
+payments, reached only through the reservation -- are still readable
+under the SAME client id afterward.
 """
+
+import uuid
+from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
@@ -27,8 +29,6 @@ client = TestClient(app)
 
 
 def _unique_phone() -> str:
-    import uuid
-
     return f"+549{uuid.uuid4().int % 10**10:010d}"
 
 
@@ -75,3 +75,64 @@ def test_reactivation_survives_a_second_delete_reactivate_cycle(
         )
         assert reactivated.status_code == 200
         assert reactivated.json()["id"] == original_id
+
+
+def test_reservations_and_their_payments_survive_client_reactivation(
+    registered_owner: RegisteredOwner,
+) -> None:
+    """The task 3.13 assertion, made real (task 5.12): a client's prior
+    reservations -- and their payments, which are reached only through the
+    reservation, never a direct client FK (payment-tracking spec "Payment
+    Record": "A payment row MUST NOT carry a client_id") -- remain
+    attached to the SAME client id after a soft-delete/reactivate cycle."""
+    headers = registered_owner.headers
+    phone = _unique_phone()
+
+    guest = client.post(
+        "/clients", headers=headers, json={"full_name": "History Guest", "phone": phone}
+    ).json()
+    original_client_id = guest["id"]
+
+    property_id = client.post(
+        "/properties", headers=headers, json={"name": "History Cabin"}
+    ).json()["id"]
+
+    reservation = client.post(
+        "/reservations",
+        headers=headers,
+        json={
+            "property_id": property_id,
+            "client_id": original_client_id,
+            "check_in": "2026-09-01",
+            "check_out": "2026-09-06",
+            "price_total": "5000.00",
+        },
+    ).json()
+    client.post(
+        f"/reservations/{reservation['id']}/payments",
+        headers=headers,
+        json={"amount": "2000.00"},
+    )
+
+    delete_response = client.delete(f"/clients/{original_client_id}", headers=headers)
+    assert delete_response.status_code == 204
+
+    reactivated = client.post(
+        "/clients", headers=headers, json={"full_name": "History Guest", "phone": phone}
+    )
+    assert reactivated.status_code == 200
+    assert reactivated.json()["id"] == original_client_id
+
+    # The reservation itself: readable, still pointing at the SAME client id.
+    reservation_after = client.get(f"/reservations/{reservation['id']}", headers=headers)
+    assert reservation_after.status_code == 200
+    assert reservation_after.json()["client_id"] == original_client_id
+
+    # Its payments: still readable through the reservation, unaffected by
+    # the client's delete/reactivate cycle (they never referenced the
+    # client directly in the first place).
+    payments_after = client.get(
+        f"/reservations/{reservation['id']}/payments", headers=headers
+    )
+    assert payments_after.status_code == 200
+    assert Decimal(str(payments_after.json()[0]["amount"])) == Decimal("2000.00")

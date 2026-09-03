@@ -2,11 +2,23 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKeyConstraint, Numeric, String, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKeyConstraint,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+    select,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID, ExcludeConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
+from app.models.payment import Payment
 
 RESERVATION_STATUSES = ("reserved", "cancelled")
 
@@ -35,10 +47,20 @@ class Reservation(Base):
     operator class inside a gist index. Scoping on `property_id` alone is
     sufficient -- it is a globally unique UUID, so `tenant_id` in the
     exclusion expression would be redundant.
+    `UNIQUE(tenant_id, id)` exists so `payments` can carry a composite FK
+    back to this table, the same pattern `properties`/`clients` already
+    carry for `reservations`' own FKs (design D6). **Phase 4 gap, closed
+    here in Phase 5 apply**: PostgreSQL requires a composite FK's
+    referenced column pair to be backed by a unique constraint, and this
+    was omitted from the original Phase 4 model even though the
+    equivalent was added to `properties`/`clients`. Nothing else about
+    this model changes -- the `EXCLUDE` constraint and the non-overlap
+    invariant are untouched.
     """
 
     __tablename__ = "reservations"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="reservations_tenant_id_uq"),
         ForeignKeyConstraint(
             ["tenant_id", "property_id"],
             ["properties.tenant_id", "properties.id"],
@@ -80,3 +102,19 @@ class Reservation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# `paid_amount` is derived in SQL, never stored (design D7): it is an
+# aggregate over another table (payments), so computing it in Python would
+# be N+1 on every list endpoint. Defined after the class body (rather than
+# inline as a mapped_column) because the correlated subquery needs to
+# reference `Reservation.id`, which does not exist as a usable expression
+# until the class itself is fully defined. `COALESCE(..., 0)` matters: a
+# reservation with zero payments must read as `0`, not `NULL` -- `SUM` over
+# zero rows returns NULL by SQL semantics.
+Reservation.paid_amount = column_property(
+    select(func.coalesce(func.sum(Payment.amount), 0))
+    .where(Payment.reservation_id == Reservation.id)
+    .correlate_except(Payment)
+    .scalar_subquery()
+)

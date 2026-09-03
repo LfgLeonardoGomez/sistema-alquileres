@@ -156,20 +156,47 @@ design.md's existing open item for D7's pricing wording.
 - [x] 4.20 [TEST] `tests/test_isolation_reservations.py` — 3-tenant seed, one test per reservation endpoint asserting cross-tenant access -> 404
 - [x] 4.21 `tests/test_schema_no_derived_columns.py`: `pg_catalog` assertion — `reservations` table has no `total` column and no `completed` column
 
-## Phase 5: Payments (PR 5, ~250 lines)
+## Phase 5: Payments (PR 5, ~250 lines) — COMPLETE
 
-- [ ] 5.1 `app/models/payment.py`: ORM — `id`, `tenant_id`, `reservation_id`, `amount NUMERIC(12,2) CHECK(amount <> 0)`, `paid_on DATE` (Python-side default `today_ar()`, not a DB default), `note TEXT` nullable, `created_at`; composite FK to `reservations`; `UNIQUE(tenant_id, id)`
-- [ ] 5.2 Register `payments` model on `Base` (table, CHECK, composite FK); add to `TENANT_SCOPED_TABLES` in `app/db/bootstrap.py` (RLS ENABLE+FORCE+policy+grants, D12 amendment — no migration file); re-run `test_rls_structural.py` -> green
-- [ ] 5.3 `app/models/reservation.py`: add `paid_amount` as `column_property` — correlated `SUM(payments.amount)` subquery (D7)
-- [ ] 5.4 [RED] `tests/test_reservation_balance.py` — `balance = total - paid_amount`; balance updates after each payment; a refund (negative amount) increases balance back
-- [ ] 5.5 [GREEN] `app/schemas/reservation.py`: `ReservationRead.balance` computed_field
-- [ ] 5.6 [RED] `tests/test_payments.py` — `POST /reservations/{id}/payments` creates a partial payment; multiple partial payments accumulate; `amount = 0` rejected (422); `GET` lists payments for a reservation
-- [ ] 5.7 [GREEN] `app/api/routers/payments.py`: POST/GET under `/reservations/{id}/payments`
-- [ ] 5.8 [RED] `tests/test_refunds.py` — a negative-amount payment records as a refund; balance increases (less paid); confirm schema has no separate `kind` column (sign is the discriminator)
-- [ ] 5.9 [GREEN] Confirm `PaymentCreate` accepts a signed `Decimal`; `note` is free-text
-- [ ] 5.10 [TEST] `tests/test_isolation_payments.py` — 3-tenant seed, POST/GET payments cross-tenant -> 404
-- [ ] 5.11 `tests/test_schema_no_derived_columns.py`: extend — `payments`/`reservations` have no `balance` column anywhere in the schema
-- [ ] 5.12 Run and confirm 3.13 (`test_client_reactivation.py`) now fully exercises reservation attachment across reactivation
+> **Phase 4 gap closed at the start of this apply.** Task 5.1 requires a
+> composite FK `(tenant_id, reservation_id) REFERENCES reservations
+> (tenant_id, id)`, which PostgreSQL requires the referenced column pair
+> to be backed by a unique constraint. `reservations` never got the
+> `UNIQUE(tenant_id, id)` that `properties`/`clients` both received in
+> Phase 3 for exactly this purpose (design D6's "every tenant-scoped
+> table therefore carries a `UNIQUE (tenant_id, id)` as an FK target").
+> Fixed by adding `UniqueConstraint("tenant_id", "id",
+> name="reservations_tenant_id_uq")` to `Reservation.__table_args__`
+> (`app/models/reservation.py`) before 5.1. Nothing else about the
+> reservations model changed — the `EXCLUDE` constraint and non-overlap
+> invariant are untouched. Verified safe: 90/90 pre-existing tests still
+> passed immediately after this change, before any Phase 5 code was
+> written.
+
+- [x] 5.1 `app/models/payment.py`: ORM — `id`, `tenant_id`, `reservation_id`, `amount NUMERIC(12,2) CHECK(amount <> 0)`, `paid_on DATE` (Python-side default `today_ar()`, not a DB default), `note TEXT` nullable, `created_at`; composite FK to `reservations`; `UNIQUE(tenant_id, id)`
+- [x] 5.2 Register `payments` model on `Base` (table, CHECK, composite FK); add to `TENANT_SCOPED_TABLES` in `app/db/bootstrap.py` (RLS ENABLE+FORCE+policy+grants, D12 amendment — no migration file); re-run `test_rls_structural.py` -> green
+- [x] 5.3 `app/models/reservation.py`: add `paid_amount` as `column_property` — correlated `SUM(payments.amount)` subquery (D7); defined after the class body (`Reservation.paid_amount = column_property(...)`), not inline, because the correlated subquery needs `Reservation.id` as a usable expression
+- [x] 5.4 [RED] `tests/test_reservation_balance.py` — `balance = total - paid_amount`; balance updates after each payment; a refund (negative amount) increases balance back. Confirmed RED for the right reason: `KeyError: 'balance'` (field did not exist yet), not an import/collection error. Payment rows inserted directly via `migrator_engine` raw SQL, not through the (not-yet-built) payments endpoint — `balance` is a pure read-side concern, testable independently of the write path.
+- [x] 5.5 [GREEN] `app/schemas/reservation.py`: `ReservationRead.balance` computed_field (added `paid_amount: Decimal` as a plain field too, so the schema can read the ORM's `column_property`). Re-ran 5.4 -> green, all 4 cases (including triangulation: no payments, one partial payment, three accumulating payments, and a refund).
+- [x] 5.6 [RED] `tests/test_payments.py` — `POST /reservations/{id}/payments` creates a partial payment; multiple partial payments accumulate; `amount = 0` rejected (422); `GET` lists payments for a reservation. Confirmed RED: all 4 cases failed with `404` (route did not exist), the right reason.
+- [x] 5.7 [GREEN] `app/api/routers/payments.py`: POST/GET under `/reservations/{id}/payments`, wired into `app/main.py`. No `app/services/payments.py` — design D3 reserves `services/` for the three modules with real logic (pricing, upsert-reactivate, aggregation); a payment insert/list has none, so it lives directly in the router, same as `properties`. Re-ran 5.6 -> green.
+- [x] 5.8 [RED] `tests/test_refunds.py` — a negative-amount payment records as a refund; balance increases (less paid); confirm schema has no separate `kind` column (sign is the discriminator). **Deviation, noted honestly**: this did NOT produce a genuine failure — 5.7's `PaymentCreate.amount: Decimal` was already unrestricted (no `gt=0`, no positivity constraint), so negative amounts were accepted the moment the endpoint existed, and no `kind` column was ever built. All 4 cases passed on first run with zero additional production code. This is the expected outcome of writing the minimum general implementation at 5.7 rather than a narrower one that would have needed a later generalization step — reported as-is rather than manufacturing an artificial RED.
+- [x] 5.9 [GREEN] Confirm `PaymentCreate` accepts a signed `Decimal`; `note` is free-text. Confirmed by 5.8's passing suite; no code change required.
+- [x] 5.10 [TEST] `tests/test_isolation_payments.py` — 3-tenant seed, POST/GET payments cross-tenant -> 404; a third case (triangulation) confirms a rejected cross-tenant POST leaves zero rows behind, not just an invisible one. All green on first run (verification test, same pattern as 4.20).
+- [x] 5.11 `tests/test_schema_no_derived_columns.py`: extended — added `test_payments_table_has_no_derived_columns`/`test_payments_table_still_has_its_real_stored_columns`, mirroring the existing `reservations` pair. `_FORBIDDEN_COLUMN_NAMES` already included `"balance"` from Phase 4 apply; only the `payments`-table query was missing.
+- [x] 5.12 Extended `tests/test_client_reactivation.py`'s deferred task-3.13 assertion into a real test: seeds a reservation + a payment for a client, soft-deletes and reactivates the client via the same phone, and asserts the reservation's `client_id` and its payments (reached only through the reservation, never a direct client FK per the payment-tracking spec) both survive under the same client id.
+
+### Deviation flagged during apply — spec column name `payment_date` vs. implemented `paid_on`
+
+`openspec/changes/cabin-booking-api/specs/payment-tracking/spec.md`'s
+"Payment Record" requirement names the date column `payment_date`. Task
+5.1 and design D7/D12's "Timezone" section both explicitly and
+consistently say `paid_on` (`payments.paid_on` appears by that name
+throughout the design's dashboard/timezone discussion, written ahead of
+this phase). Implemented as `paid_on`, per the task list and design, not
+the spec's literal wording. Flagging for spec reconciliation, same
+pattern as the two prior phases' documented deviations (D7 pricing
+wording, D8 vs. client-management spec).
 
 ## Phase 6: Public Calendar + Dashboard (PR 6, ~350 lines)
 
