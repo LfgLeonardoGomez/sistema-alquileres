@@ -21,9 +21,36 @@ The system MUST expose `GET /public/{tenant_slug}/availability` without requirin
 - WHEN an unauthenticated request is made to `/public/mar-del-tuyu-cabins/availability`
 - THEN the system MUST return HTTP 200 with availability data
 
+### Requirement: The Window Is Caller-Supplied and Mandatory
+
+The endpoint takes `from` and `to` query parameters and neither has a
+default. There is no implicit "current month" fallback: a caller that omits
+either one gets a validation error rather than a silently chosen window,
+so a client can never render a calendar for a period it did not ask for.
+
+#### Scenario: Missing window parameter is rejected
+
+- WHEN the public availability endpoint is called without `from`, without `to`, or without both
+- THEN the system MUST respond with HTTP 422 and MUST NOT return availability data
+
+#### Scenario: Both parameters supplied
+
+- WHEN the endpoint is called with both `from` and `to`
+- THEN the system MUST return occupied ranges for that window only
+
+### Requirement: The Query Layer Selects Only The Columns It Returns
+
+The database query backing this endpoint MUST select individual columns (property id, name, `check_in`, `check_out`), never a whole ORM entity such as `Reservation` or `Property`. This is a required isolation layer in its own right, not a performance optimization: because private columns (client, price, payment, notes, reservation id) are never fetched into process memory, no serialization bug, response-model regression, or accidental field addition can leak them — there is nothing loaded to leak.
+
+#### Scenario: An unfetched column cannot leak even if the response model is widened
+
+- GIVEN the public availability query selects only property identity and occupied-range columns, never a full `Reservation` or `Property` entity
+- WHEN the response model is hypothetically extended with an additional field
+- THEN the query still cannot serialize private data, because that data was never loaded from the database in the first place
+
 ### Requirement: Response Exposes Only Property Identity and Occupied Ranges
 
-The response MUST contain, per property, the property name and a list of occupied date ranges (`check_in`, `check_out`). It MUST be produced by a dedicated response model that structurally cannot carry any other field.
+The response MUST contain, per property, its `id`, its `name`, and a list of occupied date ranges (`check_in`, `check_out`). It MUST be produced by a dedicated response model that structurally cannot carry any other field.
 
 #### Scenario: Occupied ranges match non-cancelled reservations
 

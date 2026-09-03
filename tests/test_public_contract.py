@@ -136,3 +136,21 @@ def test_public_availability_excludes_cancelled_reservations(
     body = response.json()
     assert len(body) == 1
     assert body[0]["occupied"] == []
+
+
+def test_public_availability_requires_both_window_parameters() -> None:
+    """`from` and `to` are mandatory: neither carries a default.
+
+    This guards the ABSENCE of a default, which is easy to erode. Giving
+    either parameter a fallback -- a well-meant "default to the current
+    month" -- would make the endpoint answer for a window the caller never
+    asked for, and a client rendering a calendar would silently show the
+    wrong period rather than failing loudly.
+    """
+    client = TestClient(app)
+    path = "/public/mar-del-tuyu-cabins/availability"
+
+    assert client.get(path).status_code == 422
+    assert client.get(f"{path}?from=2026-12-01").status_code == 422
+    assert client.get(f"{path}?to=2026-12-31").status_code == 422
+    assert client.get(f"{path}?from=2026-12-01&to=2026-12-31").status_code == 200

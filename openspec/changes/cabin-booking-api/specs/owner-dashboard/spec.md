@@ -2,29 +2,29 @@
 
 ## Purpose
 
-Authenticated aggregates for the owner: monthly availability and income collected in the period.
+Authenticated aggregates for the owner: availability and income collected for a caller-chosen date window.
 
 ## Requirements
 
-### Requirement: Available Nights Per Month
+### Requirement: Occupied and Available Nights For The Requested Window
 
-The system MUST report, for a given month, the count of available nights per property and in aggregate across all the tenant's properties. Nights covered only by a `cancelled` reservation MUST count as available.
+The system MUST report, for a caller-supplied half-open date window `[from, to)`, the count of occupied nights and available nights per property and in aggregate across all the tenant's properties. Nights covered only by a `cancelled` reservation MUST count as available, not occupied.
 
 #### Scenario: Availability excludes cancelled reservations
 
 - GIVEN Property P has a `cancelled` reservation covering `2026-12-05` to `2026-12-10`
-- WHEN the owner requests December availability for Property P
-- THEN those nights MUST be reported as available
+- WHEN the owner requests availability for a window covering December for Property P
+- THEN those nights MUST be reported as available, not occupied
 
 #### Scenario: Aggregate across properties
 
-- GIVEN Tenant A has two properties each with distinct occupied nights in December
-- WHEN the owner requests aggregate December availability
-- THEN the result MUST reflect the combined available nights across both properties
+- GIVEN Tenant A has two properties each with distinct occupied nights in the requested window
+- WHEN the owner requests aggregate availability for that window
+- THEN the result MUST reflect the combined occupied and available nights across both properties
 
 ### Requirement: `collected` — Cash-Basis Income
 
-The system MUST compute `collected` for a period as the sum of `payments.amount` where `payment_date` falls within the period, regardless of when the related stay occurs. This MUST be the only income metric exposed by the dashboard.
+The system MUST compute `collected` for a period as the sum of `payments.amount` where `paid_on` falls within the period, regardless of when the related stay occurs. This MUST be the only income metric exposed by the dashboard.
 
 #### Scenario: Deposit counted in the month it was paid
 
@@ -44,14 +44,25 @@ The system MUST compute `collected` for a period as the sum of `payments.amount`
 - WHEN the owner requests `collected` for October 2026
 - THEN the `900.00` MUST be included exactly as it would be for an active property
 
-### Requirement: Weekly and Monthly Variants
+### Requirement: One Endpoint, One Caller-Chosen Window Per Call
 
-`collected` MUST be available as both weekly and monthly aggregates. Period boundaries MUST use the fixed server timezone `America/Argentina/Buenos_Aires`.
+`GET /dashboard/summary` MUST accept exactly one half-open date window per call, via `from` and `to` query parameters (`[from, to)`, local AR dates). The system MUST NOT compute or return multiple windows (e.g. a week and a month together) in a single response. There MUST NOT be separate weekly and monthly endpoints — a "week" or a "month" is simply a window the caller chooses and passes in, not a server-side variant.
 
-#### Scenario: Monthly and weekly totals available
+The response MUST carry exactly `collected`, `occupied_nights`, `available_nights`, and a per-property breakdown, all computed over the single requested window.
 
-- WHEN the owner requests dashboard data for a given month
-- THEN both weekly-bucketed values and a single monthly total MUST be returned for `collected`
+The system MAY provide pure helper functions (`month_window()`, `week_window()`) that compute `[from, to)` boundaries for a calendar month or an ISO week, for callers that want one — but these are convenience utilities, not endpoint behavior; the endpoint itself has no knowledge of "week" or "month" and only ever sees the resolved `from`/`to` dates. Period boundaries MUST use the fixed server timezone `America/Argentina/Buenos_Aires` when such a window is computed.
+
+#### Scenario: A monthly window returns one set of figures for that month
+
+- GIVEN the owner wants October 2026 figures
+- WHEN the owner requests `GET /dashboard/summary?from=2026-10-01&to=2026-11-01`
+- THEN the response MUST return `collected`, `occupied_nights`, and `available_nights` computed only over that window, with no other window's figures included
+
+#### Scenario: A weekly window returns one set of figures for that week, via the same endpoint
+
+- GIVEN the owner wants figures for the ISO week starting `2026-06-08`
+- WHEN the owner requests `GET /dashboard/summary?from=2026-06-08&to=2026-06-15`
+- THEN the response MUST return figures for that week only, through the same `/dashboard/summary` endpoint used for a month — no separate weekly endpoint exists
 
 ### Requirement: No Accrual-Basis Income Metric
 

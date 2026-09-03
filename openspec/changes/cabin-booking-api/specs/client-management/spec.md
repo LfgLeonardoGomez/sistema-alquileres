@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Tenant-scoped client (guest) records, created explicitly or via find-or-create during reservation booking. Deletion is soft to preserve reservation history.
+Tenant-scoped client (guest) records, created explicitly or via find-or-create during reservation booking. `POST /clients` is itself a find-or-create-or-reactivate upsert, not a plain insert — the same mechanism reservation creation uses. Deletion is soft to preserve reservation history.
 
 ## Requirements
 
@@ -20,19 +20,33 @@ Active status MUST NOT be a stored boolean. The API MUST expose `is_active`, der
 
 ### Requirement: Phone Uniqueness Spans Active and Inactive Rows
 
-The system MUST enforce that `phone` is unique per `tenant_id` across BOTH active and soft-deleted (inactive) client rows.
+The system MUST enforce that `phone` is unique per `tenant_id` across BOTH active and soft-deleted (inactive) client rows, via a full database `UNIQUE (tenant_id, phone)` constraint (never a partial index scoped to active rows only — a partial index would let a phone collide with a soft-deleted row's phone, defeating reactivation). The unique index MUST include `tenant_id`: an index on `phone` alone would let a constraint-violation response act as a cross-tenant existence oracle, since RLS hides the conflicting row but the 409 would still reveal that a match exists.
 
-#### Scenario: Duplicate phone on an active client rejected
-
-- GIVEN an active client with phone `+5491100000001` in Tenant A
-- WHEN a direct client-creation request submits the same phone for Tenant A
-- THEN the system MUST reject it with HTTP 409
+`POST /clients` MUST NOT surface a violation of this constraint as an error. See "`POST /clients` Is An Upsert" below for how a duplicate phone resolves on that endpoint.
 
 #### Scenario: Same phone allowed across different tenants
 
 - GIVEN Tenant A has a client with phone `+5491100000001`
 - WHEN Tenant B creates a client with the same phone
 - THEN the system MUST accept it
+
+### Requirement: `POST /clients` Is An Upsert, Not A Plain Insert
+
+`POST /clients` MUST resolve a duplicate `phone` within the tenant by reusing (or reactivating, per the requirement below) the existing client rather than rejecting the request. On a genuine insert the system MUST respond HTTP 201; on a resolved match (active or reactivated) the system MUST respond HTTP 200 with the existing client's `id`. The system MUST NOT create a second, parallel client row for a phone that already exists in the tenant, and MUST NOT overwrite the existing client's `full_name` or other fields from the new payload — only `deleted_at` is cleared on reactivation; field edits go through `PATCH /clients/{id}`.
+
+The full-constraint uniqueness invariant above still holds; the 409 it can produce is a live backstop that only applies to `PATCH /clients/{id}` (see below), because a `PATCH` explicitly changing `phone` to a value already in use is a genuine conflict, not a case the upsert path resolves.
+
+#### Scenario: Duplicate phone on an active client resolves via upsert, not rejection
+
+- GIVEN an active client with phone `+5491100000001` in Tenant A
+- WHEN a direct `POST /clients` request submits the same phone for Tenant A
+- THEN the system MUST respond HTTP 200 with the existing client's `id`, and MUST NOT create a duplicate row or return an error
+
+#### Scenario: `PATCH` onto an already-taken phone is rejected
+
+- GIVEN two active clients in the same tenant, one holding phone `+5491100000002`
+- WHEN the other client is `PATCH`ed with `phone` set to `+5491100000002`
+- THEN the system MUST reject the request with HTTP 409, since the upsert path does not apply to `PATCH`
 
 ### Requirement: Find-or-Create by Phone During Reservation Creation
 
