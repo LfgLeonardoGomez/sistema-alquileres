@@ -8,11 +8,14 @@ as the migrator prove nothing about isolation).
 """
 
 import os
+import uuid
+from dataclasses import dataclass
 
 import pytest
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
 
 from app.db import bootstrap
+from app.security import create_access_token, hash_password
 from scripts import seed as seed_script
 
 
@@ -38,3 +41,67 @@ def app_engine() -> Engine:
     engine = create_engine(os.environ["DATABASE_URL"])
     yield engine
     engine.dispose()
+
+
+@dataclass(frozen=True)
+class SeededTenant:
+    id: uuid.UUID
+    slug: str
+    owner_user_id: uuid.UUID
+    owner_email: str
+    owner_password: str
+    access_token: str
+
+
+def _seed_one_tenant(migrator_engine: Engine, index: int) -> SeededTenant:
+    """Insert one tenant + owner user directly as `alquileres_migrator`
+    (design Testing Strategy: "fixtures that set up and tear down use
+    alquileres_migrator"). `users` FORCES row-level security, which applies
+    even to the table owner (design D5's "belt"), so this must set
+    `app.tenant_id` in the same transaction before the INSERT satisfies the
+    policy's WITH CHECK clause -- exactly like the real registration flow."""
+    tenant_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    slug = f"isolation-tenant-{index}-{uuid.uuid4().hex[:8]}"
+    email = f"owner-{index}@isolation-test.example.com"
+    password = f"owner-{index}-password"
+
+    with migrator_engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO tenants (id, slug, name) VALUES (:id, :slug, :name)"),
+            {"id": tenant_id, "slug": slug, "name": f"Isolation Test Tenant {index}"},
+        )
+        conn.execute(
+            text("SELECT set_config('app.tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO users (id, tenant_id, email, password_hash) "
+                "VALUES (:id, :tid, :email, :password_hash)"
+            ),
+            {
+                "id": user_id,
+                "tid": tenant_id,
+                "email": email,
+                "password_hash": hash_password(password),
+            },
+        )
+
+    return SeededTenant(
+        id=tenant_id,
+        slug=slug,
+        owner_user_id=user_id,
+        owner_email=email,
+        owner_password=password,
+        access_token=create_access_token(user_id=user_id, tenant_id=tenant_id),
+    )
+
+
+@pytest.fixture
+def seed_three_tenants(migrator_engine: Engine) -> list[SeededTenant]:
+    """3 tenants, not 2 (design Testing Strategy): two tenants hide bugs
+    that leak in only one direction. Each has exactly one owner user,
+    created via `alquileres_migrator`; the app under test always connects
+    as `alquileres_app` (design D5)."""
+    return [_seed_one_tenant(migrator_engine, i) for i in range(3)]

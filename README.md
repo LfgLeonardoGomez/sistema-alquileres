@@ -4,7 +4,8 @@ A sync FastAPI service over PostgreSQL for managing cabin rentals: reservations,
 clients, payments, and a public availability calendar, isolated per tenant
 (cabin rental owner) via PostgreSQL Row-Level Security.
 
-This is slice 1 (Foundation) of the `cabin-booking-api` change. See
+This covers slice 1 (Foundation) and slice 2 (Auth + Tenant Isolation) of
+the `cabin-booking-api` change. See
 `openspec/changes/cabin-booking-api/design.md` for the full architecture.
 
 ## Stack
@@ -111,6 +112,21 @@ RLS is bypassed by superusers, `BYPASSRLS` roles, and the table owner —
 getting this role split wrong makes every future isolation test pass
 vacuously.
 
+**Deviation from design D5, recorded here.** `FORCE ROW LEVEL SECURITY`
+means the table owner (`alquileres_migrator`) is *also* subject to RLS —
+that is its entire purpose. If a table's `tenant_isolation` policy names
+only `alquileres_app`, the migrator has no applicable policy at all and
+every write is denied outright (Postgres' default-deny, not a bypass). But
+test fixtures and the seed script insert directly into tenant-scoped
+tables as the migrator (see `scripts/seed.py`'s successor for `users`, and
+`tests/conftest.py::seed_three_tenants`). So every `tenant_isolation`
+policy names **both** `alquileres_app, alquileres_migrator`
+(`app/db/bootstrap.py::apply_row_level_security`). This is not a bypass —
+both roles go through the identical `tenant_id = current_setting(...)`
+predicate, and the migrator must `set_config('app.tenant_id', ...)` in the
+same transaction before any tenant-scoped write succeeds, exactly like the
+app does.
+
 ## Configuration
 
 Environment variables, set via `pydantic-settings` (`app/config.py`):
@@ -118,34 +134,101 @@ Environment variables, set via `pydantic-settings` (`app/config.py`):
 | Variable | Required | Notes |
 |---|---|---|
 | `DATABASE_URL` | Yes | App-role (`alquileres_app`) connection string |
-| `JWT_SECRET` | Yes, **no default** | Auth is not implemented yet (slice 2), but the setting exists now and the app refuses to boot without it — a default secret in source is how a staging key reaches production. |
-| `REGISTRATION_TOKEN` | Yes, **no default** | Same reasoning; gates self-registration in a later slice. |
+| `JWT_SECRET` | Yes, **no default**, min 32 bytes | Signs and verifies access tokens (HS256, 8h expiry). The app refuses to boot without it — a default secret in source is how a staging key reaches production. |
+| `REGISTRATION_TOKEN` | Yes, **no default** | Shared secret required in the `X-Registration-Token` header on `POST /auth/register` — gates self-registration so anonymous tenant creation is not open on a public host. |
 
 `MIGRATOR_DATABASE_URL` is read directly by `scripts/reset_db.py` and
 `scripts/seed.py` (not part of the app's `Settings`) — it is never used by
 the running API process.
 
+### Secrets
+
+`JWT_SECRET` and `REGISTRATION_TOKEN` are the only real secrets. Before the
+first `docker compose up`:
+
+```bash
+cp .env.example .env      # then fill in both values
+```
+
+Compose auto-loads `.env` and passes both into the `api` service as
+`${VAR:?...}`, so an unset variable fails the `up` with a named error instead
+of silently starting on a placeholder. `.env` is gitignored; `.env.example`
+is committed and must never hold a real value.
+
+The `test` service is the deliberate exception: it keeps literal throwaway
+values in `docker-compose.yml`. Test secrets are not secrets, and requiring a
+populated `.env` just to run `pytest` buys nothing.
+
+## Authentication
+
+One owner user per tenant, no roles, no multi-user support (design D10).
+
+- `POST /auth/register` — creates a tenant and its founding owner in one
+  transaction. Requires header `X-Registration-Token: <REGISTRATION_TOKEN>`;
+  missing or wrong token -> `403`. Body:
+  `{"tenant_slug", "name", "email", "password"}`. Returns `201` and
+  `{"access_token", "token_type": "bearer"}` — registering logs the new
+  owner straight in, so no follow-up `/auth/login` call is needed. The
+  token is a header rather than a body field because it is a deployment
+  credential, not a property of the tenant being created (design D10
+  addendum).
+- `POST /auth/login` — body `{"tenant_slug", "email", "password"}`. Returns
+  `200` and `{"access_token", "token_type": "bearer"}` on success. Wrong
+  slug, wrong email, and wrong password all return the **same** generic
+  `401` — the endpoint is deliberately not an enumeration oracle for
+  tenants or accounts.
+- `GET /me` — requires `Authorization: Bearer <access_token>`. Returns the
+  caller's own `{"user_id", "tenant_id", "email"}`, resolved entirely from
+  the verified token.
+
+Tokens are stateless JWTs (HS256, 8h expiry, claims `sub`/`tid`/`iat`/`exp`),
+signed with `JWT_SECRET`. No refresh tokens — re-login after 8h. Passwords
+are hashed with Argon2id (`pwdlib[argon2]`). Login identifier (`email`) is
+unique **per tenant**, not globally — the same email can have independent
+accounts in different tenants.
+
+Every authenticated route resolves its tenant context (`app.tenant_id`,
+used by RLS) only from the verified JWT's `tid` claim — never from a
+header, query param, or body field (design D4).
+
 ## Project layout
 
 ```
 app/
-  main.py          # FastAPI app, GET /health
+  main.py          # FastAPI app, GET /health, registers the auth router
   config.py        # pydantic-settings; secrets have no defaults
+  security.py      # Argon2id hashing, JWT issuance/decoding (design D10)
+  errors.py        # Central HTTP error mapping (design D11)
   db/
     base.py         # SQLAlchemy 2.0 declarative Base
-    session.py      # Engine + SessionLocal (app role)
+    session.py      # Engine + SessionLocal (app role) + tenant_scoped_session (D4)
     bootstrap.py     # THE authoritative schema DDL: extension, tables, RLS, grants
   models/
     tenant.py        # Tenant ORM model (global, no RLS)
+    user.py           # User ORM model (tenant-scoped, RLS applied)
+  schemas/
+    auth.py           # RegisterRequest, LoginRequest, TokenResponse, MeResponse
+  api/
+    deps.py           # PrincipalDep (verifies JWT), TenantSessionDep (sets app.tenant_id)
+    routers/
+      auth.py          # /auth/register, /auth/login, /me
 docker/
   initdb/01-roles.sql   # Cluster-level role creation (D5)
 scripts/
   reset_db.py      # The one command: reset + seed
   seed.py          # Development seed data (3 tenants)
 tests/
-  conftest.py        # Resets + seeds the test DB once per session
+  conftest.py             # Resets + seeds the test DB; seed_three_tenants fixture
   test_health.py
   test_config.py
   test_bootstrap.py
   test_seed.py
+  test_rls_structural.py    # pg_catalog introspection: every tenant_id table has RLS
+  test_tenant_session.py    # tenant_scoped_session isolation, direct
+  test_security.py          # password hashing + JWT round-trip
+  test_auth_register.py
+  test_auth_login.py
+  test_me.py
+  test_isolation_auth.py    # 3-tenant cross-isolation for GET /me
+  test_isolation_login.py   # same email, independent tenants, no collision
 ```

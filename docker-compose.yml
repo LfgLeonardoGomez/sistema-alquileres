@@ -39,8 +39,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://alquileres_app:alquileres_app_password@db:5432/alquileres
       MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db:5432/alquileres
-      JWT_SECRET: dev-only-change-me
-      REGISTRATION_TOKEN: dev-only-change-me
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env - copy .env.example}
+      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN:?set REGISTRATION_TOKEN in .env - copy .env.example}
     ports:
       - "8000:8000"
     depends_on:
@@ -54,7 +54,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://alquileres_app:alquileres_app_password@db-test:5432/alquileres_test
       MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db-test:5432/alquileres_test
-      JWT_SECRET: test-secret
+      JWT_SECRET: test-secret-padded-to-32-bytes-min
       REGISTRATION_TOKEN: test-registration-token
     depends_on:
       db-test:

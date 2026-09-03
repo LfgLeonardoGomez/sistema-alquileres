@@ -253,6 +253,34 @@ Failed login returns a single generic 401 regardless of whether the slug, the em
 
 **Open, needs a human decision:** self-registration is open by default. Recommend gating `POST /auth/register` behind a shared `REGISTRATION_TOKEN` env var — one line, and it prevents anonymous tenant creation on a public host.
 
+#### D10 addendum — resolved during apply (slice 2)
+
+Three questions D10 left open were decided by the owner while implementing Phase 2.
+
+**1. Self-registration is gated.** `REGISTRATION_TOKEN` is required, has no
+default, and the app refuses to boot without it. Approved as recommended.
+
+**2. The registration token travels in an `X-Registration-Token` header,**
+not in the request body. `RegisterRequest` is specified as exactly
+`{tenant_slug, name, email, password}` — the token is a deployment
+credential, not a property of the tenant being created, so it does not
+belong in the resource payload. Missing or wrong header -> `403`. The
+comparison fails closed: an absent header is `None`, which never equals the
+configured value.
+
+**3. `POST /auth/register` returns a JWT, not a bare `201`.** Registering
+logs the new owner in immediately, so the client never has to follow up
+with `POST /auth/login`.
+
+The tradeoff was raised with the owner and accepted: whoever holds
+`REGISTRATION_TOKEN` gets an active session in one call rather than two.
+That is acceptable here because the token is a closed, operator-held
+deployment secret, there is exactly one owner per tenant, and the caller
+already supplied the password that `/auth/login` would have asked for — the
+second call would authenticate nothing the first call did not already
+establish. Revisit this if registration is ever opened to the public or a
+tenant grows past a single user.
+
 ### D11 — Error mapping
 
 | Trigger | SQLSTATE | HTTP | Reasoning |

@@ -67,29 +67,35 @@ Branch-target decision (open item): under `stacked-to-main`, each PR targets `ma
 
 ## Phase 2: Auth + Tenant Isolation (PR 2, ~400 lines) — CRITICAL, human-approved (D5, D10)
 
-- [ ] 2.1 `app/models/user.py`: `User` ORM — `id UUID PK`, `tenant_id NOT NULL`, `email`, `password_hash TEXT NOT NULL`, `created_at`; `UNIQUE(tenant_id, email)`
-- [ ] 2.2 [RED] `tests/test_rls_structural.py::test_all_tenant_tables_have_rls` — generic `pg_class`/`pg_policies` introspection: every table with a `tenant_id` column must have `relrowsecurity`, `relforcerowsecurity`, and a policy. Fails once `users` migrates without RLS (2.3, first pass).
-- [ ] 2.3 [GREEN] `app/models/user.py` registered on `Base`; extend `app/db/bootstrap.py`: add `"users"` to `TENANT_SCOPED_TABLES` so `apply_row_level_security()` creates `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + `tenant_isolation` policy + `GRANT` to `alquileres_app` (D5, D12 amendment — no migration file). Re-run 2.2 -> green.
-- [ ] 2.4 `app/db/session.py`: `get_tenant_session()` — `BEGIN`, `set_config('app.tenant_id', :tid, true)` bound param, yield, commit/rollback on exit; `TenantSessionDep`
-- [ ] 2.5 [RED] `tests/test_tenant_session.py` — two sessions with different `app.tenant_id` settings, seeded users in 2 tenants, each session only sees its own row
-- [ ] 2.6 [GREEN] Confirm 2.5 passes against 2.3+2.4; fix bind-param usage if not
-- [ ] 2.7 [RED] `tests/test_security.py::test_hash_and_verify_password` — Argon2id round-trip; wrong password rejected
-- [ ] 2.8 [GREEN] `app/security.py`: `hash_password()` / `verify_password()` via `pwdlib[argon2]`
-- [ ] 2.9 [RED] `tests/test_security.py::test_create_and_decode_jwt` — issues `sub`/`tid`/`iat`/`exp` claims, 8h expiry; decode returns same; expired/invalid token raises
-- [ ] 2.10 [GREEN] `app/security.py`: `create_access_token()` / `decode_access_token()` via `pyjwt` HS256; `app/config.py` adds `JWT_SECRET` with no default (boot fails if unset)
-- [ ] 2.11 `app/schemas/auth.py`: `RegisterRequest{tenant_slug,name,email,password}`, `LoginRequest{tenant_slug,email,password}`, `TokenResponse`, `MeResponse`
-- [ ] 2.12 `app/api/deps.py`: `get_current_principal()` verifies JWT, returns `(user_id, tenant_id)`; `PrincipalDep`; `get_tenant_session` depends on it so the setting comes only from the verified token (D4)
-- [ ] 2.13 [RED] `tests/test_auth_register.py` — missing/invalid `REGISTRATION_TOKEN` -> 403; valid token -> 201, tenant + owner created in one transaction
-- [ ] 2.14 [GREEN] `app/config.py` adds `REGISTRATION_TOKEN` (no default); `app/api/routers/auth.py` `POST /auth/register` — verify token, insert tenant, `set_config`, insert owner user, all one transaction
-- [ ] 2.15 [RED] `tests/test_auth_login.py` — valid creds -> 200 + JWT; wrong slug, wrong email, wrong password each -> the same generic 401 (not distinguishable)
-- [ ] 2.16 [GREEN] `POST /auth/login`: resolve tenant by slug (no-RLS read), `set_config`, look up user under RLS, verify password, issue JWT
-- [ ] 2.17 [RED] `tests/test_me.py` — `GET /me` without token -> 401; with valid token -> 200 with own `user_id`/`tenant_id`/`email`
-- [ ] 2.18 [GREEN] `GET /me` route using `PrincipalDep`
-- [ ] 2.19 `app/errors.py`: initial mapping — missing/invalid token -> 401; authenticated but not permitted -> 403
-- [ ] 2.20 `tests/conftest.py`: `seed_three_tenants` fixture (3 tenants + 3 owner users), created via `alquileres_migrator`; app under test always connects as `alquileres_app`
-- [ ] 2.21 [TEST] `tests/test_isolation_auth.py` — `GET /me` with tenant B's JWT never returns tenant A data, across all 3 seeded tenants
-- [ ] 2.22 [TEST] `tests/test_isolation_login.py` — same email registered independently in tenant A and tenant B, both log in independently, no collision
-- [ ] 2.23 `README.md`: document `REGISTRATION_TOKEN` and `JWT_SECRET` requirements, login payload shape
+- [x] 2.1 `app/models/user.py`: `User` ORM — `id UUID PK`, `tenant_id NOT NULL`, `email`, `password_hash TEXT NOT NULL`, `created_at`; `UNIQUE(tenant_id, email)`
+- [x] 2.2 [RED] `tests/test_rls_structural.py::test_all_tenant_tables_have_rls` — generic `pg_class`/`pg_policies` introspection: every table with a `tenant_id` column must have `relrowsecurity`, `relforcerowsecurity`, and a policy. Fails once `users` migrates without RLS (2.3, first pass).
+- [x] 2.3 [GREEN] `app/models/user.py` registered on `Base`; extend `app/db/bootstrap.py`: add `"users"` to `TENANT_SCOPED_TABLES` so `apply_row_level_security()` creates `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + `tenant_isolation` policy + `GRANT` to `alquileres_app` (D5, D12 amendment — no migration file). Re-run 2.2 -> green.
+- [x] 2.4 `app/db/session.py`: `get_tenant_session()` — `BEGIN`, `set_config('app.tenant_id', :tid, true)` bound param, yield, commit/rollback on exit; `TenantSessionDep`
+- [x] 2.5 [RED] `tests/test_tenant_session.py` — two sessions with different `app.tenant_id` settings, seeded users in 2 tenants, each session only sees its own row
+- [x] 2.6 [GREEN] Confirm 2.5 passes against 2.3+2.4; fix bind-param usage if not
+- [x] 2.7 [RED] `tests/test_security.py::test_hash_and_verify_password` — Argon2id round-trip; wrong password rejected
+- [x] 2.8 [GREEN] `app/security.py`: `hash_password()` / `verify_password()` via `pwdlib[argon2]`
+- [x] 2.9 [RED] `tests/test_security.py::test_create_and_decode_jwt` — issues `sub`/`tid`/`iat`/`exp` claims, 8h expiry; decode returns same; expired/invalid token raises
+- [x] 2.10 [GREEN] `app/security.py`: `create_access_token()` / `decode_access_token()` via `pyjwt` HS256; `app/config.py` adds `JWT_SECRET` with no default (boot fails if unset)
+- [x] 2.11 `app/schemas/auth.py`: `RegisterRequest{tenant_slug,name,email,password}`, `LoginRequest{tenant_slug,email,password}`, `TokenResponse`, `MeResponse`
+- [x] 2.12 `app/api/deps.py`: `get_current_principal()` verifies JWT, returns `(user_id, tenant_id)`; `PrincipalDep`; `get_tenant_session` depends on it so the setting comes only from the verified token (D4)
+- [x] 2.13 [RED] `tests/test_auth_register.py` — missing/invalid `REGISTRATION_TOKEN` -> 403; valid token -> 201, tenant + owner created in one transaction
+- [x] 2.14 [GREEN] `app/config.py` adds `REGISTRATION_TOKEN` (no default); `app/api/routers/auth.py` `POST /auth/register` — verify token, insert tenant, `set_config`, insert owner user, all one transaction
+- [x] 2.15 [RED] `tests/test_auth_login.py` — valid creds -> 200 + JWT; wrong slug, wrong email, wrong password each -> the same generic 401 (not distinguishable)
+- [x] 2.16 [GREEN] `POST /auth/login`: resolve tenant by slug (no-RLS read), `set_config`, look up user under RLS, verify password, issue JWT
+- [x] 2.17 [RED] `tests/test_me.py` — `GET /me` without token -> 401; with valid token -> 200 with own `user_id`/`tenant_id`/`email`
+- [x] 2.18 [GREEN] `GET /me` route using `PrincipalDep`
+- [x] 2.19 `app/errors.py`: initial mapping — missing/invalid token -> 401; authenticated but not permitted -> 403
+- [x] 2.20 `tests/conftest.py`: `seed_three_tenants` fixture (3 tenants + 3 owner users), created via `alquileres_migrator`; app under test always connects as `alquileres_app`
+- [x] 2.21 [TEST] `tests/test_isolation_auth.py` — `GET /me` with tenant B's JWT never returns tenant A data, across all 3 seeded tenants
+- [x] 2.22 [TEST] `tests/test_isolation_login.py` — same email registered independently in tenant A and tenant B, both log in independently, no collision
+- [x] 2.23 `README.md`: document `REGISTRATION_TOKEN` and `JWT_SECRET` requirements, login payload shape
+
+### Additional slice-2 work (not in the original task list, added during apply)
+
+- [x] `app/db/bootstrap.py`: deviation from design D5's literal snippet — `tenant_isolation` policy is scoped `TO alquileres_app, alquileres_migrator`, not `alquileres_app` alone. `FORCE ROW LEVEL SECURITY` subjects the table owner to RLS too; with only `alquileres_app` on the policy, the migrator has zero applicable policy and every write is denied outright (Postgres default-deny), which would make fixture/seed writes as the migrator (task 2.20, `scripts/seed.py`-style inserts) impossible. Both roles go through the identical `tenant_id` predicate — not a bypass, and the migrator must `set_config('app.tenant_id', ...)` in the same transaction just like the app does. Documented in `app/db/bootstrap.py` and `README.md`.
+- [x] `tests/test_seed.py`: adjusted from an exact-total-row-count assertion to checking the three known seed slugs specifically — Phase 2's auth/isolation tests legitimately add more tenants to the same session-scoped test database, so an exact count depends on pytest's collection order, not on a real property of `scripts/seed.py`.
+- [x] `pyproject.toml`: added `pwdlib[argon2]` and `pyjwt`; rebuilt the `api`/`test` Docker images to pick them up.
 
 ## Phase 3: Properties + Clients CRUD (PR 3, ~300 lines)
 

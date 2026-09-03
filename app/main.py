@@ -6,11 +6,14 @@ process fails fast at boot if a required secret is missing.
 
 from fastapi import FastAPI
 
+from app.api.routers import auth
 from app.config import get_settings
 
 settings = get_settings()
 
 app = FastAPI(title="Cabin Booking API")
+
+app.include_router(auth.router)
 
 
 @app.get("/health")
