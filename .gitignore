@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+.env
+.env.*
+!.env.example
+
+# Docker
+docker-volumes/
+
+# Local-only tool settings (per-machine, not shared)
+.claude/settings.local.json
+

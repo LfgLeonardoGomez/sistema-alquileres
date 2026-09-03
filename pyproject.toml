@@ -1,0 +1,29 @@
+[project]
+name = "cabin-booking-api"
+version = "0.1.0"
+description = "Cabin rental booking API (SistemaAlquileres)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "pydantic-settings>=2.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,65 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: alquileres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d alquileres"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  db-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: alquileres_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d alquileres_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      DATABASE_URL: postgresql+psycopg://alquileres_app:alquileres_app_password@db:5432/alquileres
+      MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db:5432/alquileres
+      JWT_SECRET: dev-only-change-me
+      REGISTRATION_TOKEN: dev-only-change-me
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  test:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      DATABASE_URL: postgresql+psycopg://alquileres_app:alquileres_app_password@db-test:5432/alquileres_test
+      MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db-test:5432/alquileres_test
+      JWT_SECRET: test-secret
+      REGISTRATION_TOKEN: test-registration-token
+    depends_on:
+      db-test:
+        condition: service_healthy
+    command: ["pytest", "-v"]
+
+volumes:
+  db-data:
