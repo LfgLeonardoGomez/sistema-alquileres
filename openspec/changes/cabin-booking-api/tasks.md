@@ -97,21 +97,40 @@ Branch-target decision (open item): under `stacked-to-main`, each PR targets `ma
 - [x] `tests/test_seed.py`: adjusted from an exact-total-row-count assertion to checking the three known seed slugs specifically — Phase 2's auth/isolation tests legitimately add more tenants to the same session-scoped test database, so an exact count depends on pytest's collection order, not on a real property of `scripts/seed.py`.
 - [x] `pyproject.toml`: added `pwdlib[argon2]` and `pyjwt`; rebuilt the `api`/`test` Docker images to pick them up.
 
-## Phase 3: Properties + Clients CRUD (PR 3, ~300 lines)
+## Phase 3: Properties + Clients CRUD (PR 3, ~300 lines) — COMPLETE
 
-- [ ] 3.1 `app/models/property.py`: `Property` ORM — `id`, `tenant_id`, `name`, `deleted_at` nullable, `created_at`; `UNIQUE(tenant_id, id)`
-- [ ] 3.2 `app/models/client.py`: `Client` ORM — `id`, `tenant_id`, `full_name`, `phone NOT NULL`, `email` nullable, `national_id` nullable, `deleted_at` nullable; `UNIQUE(tenant_id, id)`, `UNIQUE(tenant_id, phone)` (full unique, spans deleted rows — D8)
-- [ ] 3.3 Register `properties`/`clients` models on `Base`; add both to `TENANT_SCOPED_TABLES` in `app/db/bootstrap.py` (RLS ENABLE+FORCE+policy+grants, D12 amendment — no migration file); re-run `scripts.reset_db` and `test_rls_structural.py` (2.2, generic) -> green
-- [ ] 3.4 `app/schemas/property.py`: `PropertyCreate`, `PropertyUpdate`, `PropertyRead` (`is_active` computed_field from `deleted_at`)
-- [ ] 3.5 `app/schemas/client.py`: `ClientCreate`, `ClientUpdate`, `ClientRead` (`is_active` computed_field from `deleted_at`)
-- [ ] 3.6 [RED] `tests/test_properties.py` — POST creates; `GET /properties` excludes `deleted_at IS NOT NULL` by default, `?include_inactive=true` includes; PATCH edits name; DELETE sets `deleted_at`
-- [ ] 3.7 [GREEN] `app/api/routers/properties.py`: CRUD routes on `TenantSessionDep`
-- [ ] 3.8 `app/services/clients.py`: `upsert_or_reactivate_client()` — single `INSERT ... ON CONFLICT (tenant_id, phone) DO UPDATE SET deleted_at = NULL RETURNING id, (xmax = 0) AS was_created` (D8); name is never overwritten on reactivation
-- [ ] 3.9 [RED] `tests/test_clients.py` — create client; second create with same phone returns same `id`; soft-delete then re-create same phone reactivates (`deleted_at` cleared, same `id`, name unchanged)
-- [ ] 3.10 [GREEN] `app/api/routers/clients.py`: POST (calls 3.8), `GET` list (`deleted_at IS NULL` filter, explicit at call site), `GET` by id (no filter), PATCH, DELETE (soft)
-- [ ] 3.11 [TEST] `tests/test_isolation_properties_clients.py` — 3-tenant seed, one test per endpoint (list/create/get/patch/delete, both resources) asserting cross-tenant access -> 404
-- [ ] 3.12 `app/errors.py`: extend mapping — `23505` (duplicate phone backstop) -> 409; `23503` (FK to RLS-hidden row) -> 404
-- [ ] 3.13 [TEST] `tests/test_client_reactivation.py` — a soft-deleted client's prior reservations remain attached to the same client `id` after reactivation (deferred assertion on reservation FK, written now, exercised fully once Phase 4 lands)
+- [x] 3.1 `app/models/property.py`: `Property` ORM — `id`, `tenant_id`, `name`, `deleted_at` nullable, `created_at`; `UNIQUE(tenant_id, id)`
+- [x] 3.2 `app/models/client.py`: `Client` ORM — `id`, `tenant_id`, `full_name`, `phone NOT NULL`, `email` nullable, `national_id` nullable, `deleted_at` nullable; `UNIQUE(tenant_id, id)`, `UNIQUE(tenant_id, phone)` (full unique, spans deleted rows — D8)
+- [x] 3.3 Register `properties`/`clients` models on `Base`; add both to `TENANT_SCOPED_TABLES` in `app/db/bootstrap.py` (RLS ENABLE+FORCE+policy+grants, D12 amendment — no migration file); re-run `scripts.reset_db` and `test_rls_structural.py` (2.2, generic) -> green
+- [x] 3.4 `app/schemas/property.py`: `PropertyCreate`, `PropertyUpdate`, `PropertyRead` (`is_active` computed_field from `deleted_at`)
+- [x] 3.5 `app/schemas/client.py`: `ClientCreate`, `ClientUpdate`, `ClientRead` (`is_active` computed_field from `deleted_at`)
+- [x] 3.6 [RED] `tests/test_properties.py` — POST creates; `GET /properties` excludes `deleted_at IS NOT NULL` by default, `?include_inactive=true` includes; PATCH edits name; DELETE sets `deleted_at`
+- [x] 3.7 [GREEN] `app/api/routers/properties.py`: CRUD routes on `TenantSessionDep`
+- [x] 3.8 `app/services/clients.py`: `upsert_or_reactivate_client()` — single `INSERT ... ON CONFLICT (tenant_id, phone) DO UPDATE SET deleted_at = NULL RETURNING id, (xmax = 0) AS was_created` (D8); name is never overwritten on reactivation
+- [x] 3.9 [RED] `tests/test_clients.py` — create client; second create with same phone returns same `id`; soft-delete then re-create same phone reactivates (`deleted_at` cleared, same `id`, name unchanged)
+- [x] 3.10 [GREEN] `app/api/routers/clients.py`: POST (calls 3.8), `GET` list (`deleted_at IS NULL` filter, explicit at call site), `GET` by id (no filter), PATCH, DELETE (soft)
+- [x] 3.11 [TEST] `tests/test_isolation_properties_clients.py` — 3-tenant seed, one test per endpoint (list/create/get/patch/delete, both resources) asserting cross-tenant access -> 404
+- [x] 3.12 `app/errors.py`: extend mapping — `23505` (duplicate phone backstop) -> 409; `23503` (FK to RLS-hidden row) -> 404
+- [x] 3.13 [TEST] `tests/test_client_reactivation.py` — a soft-deleted client's prior reservations remain attached to the same client `id` after reactivation (deferred assertion on reservation FK, written now, exercised fully once Phase 4 lands)
+
+### Deviation flagged during apply — client-management spec vs. task 3.9/D8
+
+`openspec/changes/cabin-booking-api/specs/client-management/spec.md`'s
+"Phone Uniqueness" requirement states a direct `POST /clients` with a
+phone already used by an ACTIVE client "MUST reject it with HTTP 409".
+Task 3.9 (and design D8's `upsert_or_reactivate_client`, whose D11 error
+table explicitly says the D8 upsert "normally absorbs" the `23505`
+conflict) both specify the opposite: `POST /clients` calls the same
+find-or-create-or-reactivate upsert regardless of caller, so a duplicate
+phone on an active client is NOT an error — it silently resolves to the
+existing client's id (200, not 201), matching task 3.9's literal test
+description ("second create with same phone returns same id"). Implemented
+per the task list and D8/D11, not per the client-management spec's stated
+409 scenario. The `23505` -> 409 mapping (task 3.12) is real and tested,
+but as the documented "backstop" for a write path that does NOT go through
+the upsert (`PATCH /clients/{id}` changing `phone` onto an existing
+value), not for `POST /clients`. Flagging for spec reconciliation, same as
+design.md's existing open item for D7's pricing wording.
 
 ## Phase 4: Reservations (PR 4, ~450 lines) — core invariant
 

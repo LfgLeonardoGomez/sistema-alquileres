@@ -12,11 +12,15 @@ import uuid
 from dataclasses import dataclass
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
 
 from app.db import bootstrap
-from app.security import create_access_token, hash_password
+from app.main import app
+from app.security import create_access_token, decode_access_token, hash_password
 from scripts import seed as seed_script
+
+_client = TestClient(app)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -105,3 +109,36 @@ def seed_three_tenants(migrator_engine: Engine) -> list[SeededTenant]:
     created via `alquileres_migrator`; the app under test always connects
     as `alquileres_app` (design D5)."""
     return [_seed_one_tenant(migrator_engine, i) for i in range(3)]
+
+
+@dataclass(frozen=True)
+class RegisteredOwner:
+    tenant_id: uuid.UUID
+    tenant_slug: str
+    access_token: str
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.access_token}"}
+
+
+@pytest.fixture
+def registered_owner() -> RegisteredOwner:
+    """Registers a brand-new tenant through the real `POST /auth/register`
+    HTTP path (not a direct DB insert) and returns its access token. Used
+    by single-tenant resource-CRUD tests (properties, clients) that don't
+    need the 3-tenant isolation fixture (`seed_three_tenants`)."""
+    slug = f"owner-test-{uuid.uuid4().hex[:8]}"
+    response = _client.post(
+        "/auth/register",
+        headers={"X-Registration-Token": os.environ["REGISTRATION_TOKEN"]},
+        json={
+            "tenant_slug": slug,
+            "name": "Test Owner",
+            "email": f"owner-{uuid.uuid4().hex[:8]}@example.com",
+            "password": "a-strong-password",
+        },
+    )
+    access_token = response.json()["access_token"]
+    tenant_id = uuid.UUID(decode_access_token(access_token)["tid"])
+    return RegisteredOwner(tenant_id=tenant_id, tenant_slug=slug, access_token=access_token)

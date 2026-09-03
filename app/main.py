@@ -5,8 +5,10 @@ process fails fast at boot if a required secret is missing.
 """
 
 from fastapi import FastAPI
+from sqlalchemy.exc import IntegrityError
 
-from app.api.routers import auth
+from app import errors
+from app.api.routers import auth, clients, properties
 from app.config import get_settings
 
 settings = get_settings()
@@ -14,6 +16,10 @@ settings = get_settings()
 app = FastAPI(title="Cabin Booking API")
 
 app.include_router(auth.router)
+app.include_router(properties.router)
+app.include_router(clients.router)
+
+app.add_exception_handler(IntegrityError, errors.handle_integrity_error)
 
 
 @app.get("/health")

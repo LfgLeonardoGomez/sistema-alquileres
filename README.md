@@ -191,14 +191,49 @@ Every authenticated route resolves its tenant context (`app.tenant_id`,
 used by RLS) only from the verified JWT's `tid` claim — never from a
 header, query param, or body field (design D4).
 
+## Properties and clients
+
+Both resources share the same soft-delete mechanism (design D8):
+`deleted_at TIMESTAMPTZ NULL` on the row, never a physical delete, and the
+API exposes a derived `is_active` boolean — `is_active` is never a stored
+column.
+
+- `POST /properties`, `GET /properties` (`?include_inactive=true` opts
+  into inactive rows; default excludes them), `GET /properties/{id}`,
+  `PATCH /properties/{id}` (edits `name`), `DELETE /properties/{id}` (soft).
+- `POST /clients` is the find-or-create-or-reactivate entrypoint, not a
+  plain insert: a second `POST` with the same `phone` returns the existing
+  client's id (`200`, not a new `201`), and a `POST` matching a
+  soft-deleted client's `phone` reactivates it in place (`deleted_at`
+  cleared, same `id`, existing `full_name` never overwritten). See
+  `app/services/clients.py::upsert_or_reactivate_client`. `GET /clients`
+  excludes inactive clients by default; `GET /clients/{id}` does not
+  filter, so a historical lookup still resolves an inactive client.
+  `PATCH /clients/{id}` edits any field directly (including `phone`) and
+  does **not** go through the upsert — a `phone` collision there is a
+  genuine `409` (the `23505` backstop in `app/errors.py`).
+
+Every property/client route uses `TenantSessionDep`; cross-tenant access
+by id returns `404` (design D11 — RLS makes "belongs to another tenant"
+and "never existed" indistinguishable without deliberately bypassing RLS,
+so 404 is the only honest answer).
+
+**Known spec deviation, flagged during Phase 3 apply.** The
+`client-management` spec states a direct `POST /clients` duplicate-phone
+request against an active client "MUST reject it with HTTP 409". The
+implementation instead follows design D8/D11 and the task list: `POST
+/clients` always goes through the upsert, so a duplicate active phone
+resolves silently to the existing client (`200`), never a `409`. See
+`openspec/changes/cabin-booking-api/tasks.md`'s Phase 3 deviation note.
+
 ## Project layout
 
 ```
 app/
-  main.py          # FastAPI app, GET /health, registers the auth router
+  main.py          # FastAPI app, GET /health, registers routers + IntegrityError handler
   config.py        # pydantic-settings; secrets have no defaults
   security.py      # Argon2id hashing, JWT issuance/decoding (design D10)
-  errors.py        # Central HTTP error mapping (design D11)
+  errors.py        # Central HTTP error mapping: auth (D10) + SQLSTATE dispatch (D11)
   db/
     base.py         # SQLAlchemy 2.0 declarative Base
     session.py      # Engine + SessionLocal (app role) + tenant_scoped_session (D4)
@@ -206,19 +241,27 @@ app/
   models/
     tenant.py        # Tenant ORM model (global, no RLS)
     user.py           # User ORM model (tenant-scoped, RLS applied)
+    property.py        # Property ORM model (tenant-scoped, soft delete)
+    client.py           # Client ORM model (tenant-scoped, soft delete, UNIQUE(tenant_id, phone))
   schemas/
     auth.py           # RegisterRequest, LoginRequest, TokenResponse, MeResponse
+    property.py         # PropertyCreate/Update/Read (is_active computed_field)
+    client.py            # ClientCreate/Update/Read (is_active computed_field)
   api/
     deps.py           # PrincipalDep (verifies JWT), TenantSessionDep (sets app.tenant_id)
     routers/
       auth.py          # /auth/register, /auth/login, /me
+      properties.py     # /properties CRUD
+      clients.py          # /clients CRUD (POST is find-or-create-or-reactivate)
+  services/
+    clients.py         # upsert_or_reactivate_client (design D8)
 docker/
   initdb/01-roles.sql   # Cluster-level role creation (D5)
 scripts/
   reset_db.py      # The one command: reset + seed
   seed.py          # Development seed data (3 tenants)
 tests/
-  conftest.py             # Resets + seeds the test DB; seed_three_tenants fixture
+  conftest.py             # Resets + seeds the test DB; seed_three_tenants + registered_owner fixtures
   test_health.py
   test_config.py
   test_bootstrap.py
@@ -231,4 +274,8 @@ tests/
   test_me.py
   test_isolation_auth.py    # 3-tenant cross-isolation for GET /me
   test_isolation_login.py   # same email, independent tenants, no collision
+  test_properties.py               # property CRUD, soft delete, include_inactive
+  test_clients.py                   # client CRUD, find-or-create-or-reactivate, 23505 backstop
+  test_isolation_properties_clients.py  # 3-tenant cross-isolation, one test per endpoint x resource
+  test_client_reactivation.py           # client id stability across delete/reactivate cycles
 ```
