@@ -198,20 +198,54 @@ the spec's literal wording. Flagging for spec reconciliation, same
 pattern as the two prior phases' documented deviations (D7 pricing
 wording, D8 vs. client-management spec).
 
-## Phase 6: Public Calendar + Dashboard (PR 6, ~350 lines)
+## Phase 6: Public Calendar + Dashboard (PR 6, ~350 lines) — COMPLETE
 
-- [ ] 6.1 `app/schemas/public.py`: `PublicAvailability{property_id, name, occupied: list[OccupiedRange]}`, `OccupiedRange{check_in, check_out}`; `ConfigDict(extra="forbid")`; shares no base class with authenticated schemas (D9)
-- [ ] 6.2 `app/api/deps.py`: `get_public_session()` — resolves tenant by slug path param (no-RLS `tenants` read), sets `app.tenant_id` exactly as `get_tenant_session`; `PublicSessionDep`
-- [ ] 6.3 `app/api/routers/public.py`: `GET /public/{tenant_slug}/availability?from=&to=` — column-projection `SELECT (property_id, check_in, check_out)` only, joins `properties` and excludes `deleted_at IS NOT NULL`, no auth dependency
-- [ ] 6.4 [RED] `tests/test_public_contract.py` — seed a tenant with a distinctive client name, phone, price, and payment note; assert none of those strings appear anywhere in the raw response body
-- [ ] 6.5 [GREEN] Confirm 6.3's query selects only the three projected columns; `response_model=list[PublicAvailability]` enforced -> 6.4 green
-- [ ] 6.6 [TEST] `tests/test_public_inactive_property.py` — seed an inactive property carrying a reservation; assert its `property_id` is absent from the public response while the same reservation remains visible on the authenticated `GET /reservations`
-- [ ] 6.7 `app/services/dates.py`: `month_window()`, `week_window()` (ISO Monday-Sunday) — pure functions, half-open bounds, no DB
-- [ ] 6.8 [RED] `tests/test_date_windows.py` — unit tests for `month_window`/`week_window` boundaries
-- [ ] 6.9 [GREEN] Implement/confirm `month_window`/`week_window`
-- [ ] 6.10 `app/services/dashboard.py`: `collected(from, to)` — signed `SUM(payments.amount)` where `paid_on` in `[from, to)`; `occupied_nights`/`available_nights` via `daterange` intersection, denominator counts only active (`deleted_at IS NULL`) properties, grouped by `property_id`
-- [ ] 6.11 [RED] `tests/test_dashboard_collected.py` — a deposit paid in month A for a stay in month B counts in A, not B; a refund reduces `collected`; `collected` counts payments on both active and inactive properties
-- [ ] 6.12 [RED] `tests/test_dashboard_availability.py` — `available_nights` excludes inactive properties from the denominator; a stay straddling Dec/Jan is split correctly across the two month windows
-- [ ] 6.13 [GREEN] `app/api/routers/dashboard.py`: `GET /dashboard/summary?from=&to=` returns `{collected, occupied_nights, available_nights, per-property breakdown}`
-- [ ] 6.14 [TEST] `tests/test_isolation_dashboard.py` — 3-tenant seed, dashboard summary reflects only the caller's own tenant
-- [ ] 6.15 `README.md`: document the public calendar URL shape and dashboard query params
+> **Task-list gap closed during apply, flagged per the calling agent's
+> explicit instruction.** Task 6.3's text only mentions projecting three
+> columns, joining `properties`, and excluding soft-deleted properties —
+> it does not say cancelled reservations must be excluded from the public
+> availability response. Implemented anyway: `app/services/public.py`
+> filters `Reservation.status != "cancelled"`, matching the
+> `reservations_no_overlap` EXCLUDE constraint's own predicate (design
+> D6: `WHERE (status <> 'cancelled')`) — a cancelled reservation's nights
+> are genuinely bookable again, so the public calendar must agree with
+> the database or it silently hides real availability from prospects.
+> Covered by `tests/test_public_contract.py::test_public_availability_excludes_cancelled_reservations`.
+> The same reasoning was applied to the dashboard's `occupied_nights`
+> metric (task 6.10/6.12, not explicitly named as a cancelled-exclusion
+> requirement in the task text either) — `app/services/dashboard.py`
+> filters `r.status <> 'cancelled'` in the occupancy query, covered by
+> `tests/test_dashboard_availability.py::test_cancelled_reservation_nights_are_reported_as_available`.
+
+- [x] 6.1 `app/schemas/public.py`: `PublicAvailability{property_id, name, occupied: list[OccupiedRange]}`, `OccupiedRange{check_in, check_out}`; `ConfigDict(extra="forbid")`; shares no base class with authenticated schemas (D9)
+- [x] 6.2 `app/api/deps.py`: `get_public_session()` — resolves tenant by slug path param (no-RLS `tenants` read), sets `app.tenant_id` exactly as `get_tenant_session`; `PublicSessionDep`
+- [x] 6.3 `app/api/routers/public.py` + `app/services/public.py`: `GET /public/{tenant_slug}/availability?from=&to=` — two column-projected queries (`property_id`/`name`; `property_id`/`check_in`/`check_out`), never a whole-ORM-object select; joins `properties` and excludes `deleted_at IS NOT NULL`; excludes cancelled reservations (gap fix, see note above); no auth dependency
+- [x] 6.4 [RED] `tests/test_public_contract.py` — seed a tenant with a distinctive client name, phone, price, and payment note; assert none of those strings appear anywhere in the raw response body (`response.text`, not a parsed field list). Confirmed RED for the right reason: `404` (route did not exist yet), not a leak.
+- [x] 6.5 [GREEN] Confirmed 6.3's queries select only the projected columns; `response_model=list[PublicAvailability]` enforced -> 6.4 green, plus an occupied-range-content assertion and an unknown-slug 404 test.
+- [x] 6.6 [TEST] `tests/test_public_inactive_property.py` — seed an inactive property carrying a reservation; assert its `property_id` is absent from the public response while the same reservation remains visible on the authenticated `GET /reservations/{id}`
+- [x] 6.7 `app/services/dates.py`: `month_window()`, `week_window()` (ISO Monday-Sunday) — pure functions, half-open bounds, no DB
+- [x] 6.8 [RED] `tests/test_date_windows.py` — unit tests for `month_window`/`week_window` boundaries (December year rollover, mid-week/Monday/Sunday triangulation). Confirmed RED: `ImportError` (functions did not exist yet).
+- [x] 6.9 [GREEN] Implemented `month_window`/`week_window`; all 5 cases green.
+- [x] 6.10 `app/services/dashboard.py`: `collected(from, to)` — signed `SUM(payments.amount)` where `paid_on` in `[from, to)`; `occupied_and_available_nights()` via `daterange` intersection, denominator counts only active (`deleted_at IS NULL`) properties, grouped by `property_id`
+- [x] 6.11 [RED] `tests/test_dashboard_collected.py` — a deposit paid in month A for a stay in month B counts in A, not B; a refund reduces `collected`; `collected` counts payments on both active and inactive properties. Confirmed RED: `404` (route did not exist yet).
+- [x] 6.12 [RED] `tests/test_dashboard_availability.py` — `available_nights` excludes inactive properties from the denominator; a stay straddling Dec/Jan is split correctly across the two month windows; cancelled-reservation gap test (see note above). **Real bug caught by TRIANGULATE, not just RED**: the first GREEN implementation used `daterange(r.check_in, r.check_out, '[)')` directly against `LEFT JOIN`-produced `NULL` columns, and Postgres range semantics treat a `NULL` bound as *unbounded* (infinite), not "no value" — so every property with no matching reservation (or only a cancelled one) was scored as 100% occupied instead of 100% available. Caught immediately by this file's own tests failing with that exact symptom; fixed with an explicit `CASE WHEN r.id IS NULL THEN 0 ELSE ... END` guard, documented in `app/services/dashboard.py`.
+- [x] 6.13 [GREEN] `app/api/routers/dashboard.py`: `GET /dashboard/summary?from=&to=` returns `{collected, occupied_nights, available_nights, properties: [...]}` — all green after the CASE-guard fix above.
+- [x] 6.14 [TEST] `tests/test_isolation_dashboard.py` — 3-tenant seed, dashboard summary reflects only the caller's own tenant (a tenant with zero activity reads back all zeros/empty, never another tenant's data)
+- [x] 6.15 `README.md`: documented the public calendar endpoint and dashboard endpoint, their query params, and the D9 three-layer privacy design
+
+### Deviation flagged during apply — owner-dashboard spec "Weekly and Monthly Variants" vs. the single `from`/`to` endpoint
+
+`openspec/changes/cabin-booking-api/specs/owner-dashboard/spec.md`'s
+"Weekly and Monthly Variants" requirement states that requesting a
+month's dashboard data must return "both weekly-bucketed values and a
+single monthly total" for `collected` in the *same* response. The design
+("Interfaces" section: "one endpoint, two windows, two numbers") and task
+6.13's literal route (`GET /dashboard/summary?from=&to=` returning one
+`collected` number for the caller-supplied window) both specify the
+opposite: the caller chooses ONE window per call — a month via
+`month_window()` or a week via `week_window()` — and gets one number back;
+per-week bucketing within a month response does not exist. Implemented
+per the task list and design, not the spec's literal "both...in the same
+response" wording — the same pattern as the three prior phases' documented
+spec deviations (D7 pricing wording, D8 vs. client-management spec,
+`paid_on` vs. `payment_date`). Flagging for spec reconciliation.

@@ -4,8 +4,9 @@ A sync FastAPI service over PostgreSQL for managing cabin rentals: reservations,
 clients, payments, and a public availability calendar, isolated per tenant
 (cabin rental owner) via PostgreSQL Row-Level Security.
 
-This covers slice 1 (Foundation) and slice 2 (Auth + Tenant Isolation) of
-the `cabin-booking-api` change. See
+All six slices of the `cabin-booking-api` change are implemented:
+Foundation, Auth + Tenant Isolation, Properties + Clients, Reservations,
+Payments, and the Public Calendar + Owner Dashboard covered below. See
 `openspec/changes/cabin-booking-api/design.md` for the full architecture.
 
 ## Stack
@@ -226,6 +227,105 @@ implementation instead follows design D8/D11 and the task list: `POST
 resolves silently to the existing client (`200`), never a `409`. See
 `openspec/changes/cabin-booking-api/tasks.md`'s Phase 3 deviation note.
 
+## Public availability calendar
+
+`GET /public/{tenant_slug}/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` —
+**no authentication required**. `tenant_slug` is the same public slug used
+in `POST /auth/login`; `from`/`to` are a half-open `[from, to)` date
+window. Returns one entry per **active** property for that tenant:
+
+```json
+[
+  {
+    "property_id": "…",
+    "name": "Lake House 3",
+    "occupied": [
+      { "check_in": "2026-12-05", "check_out": "2026-12-10" }
+    ]
+  }
+]
+```
+
+An unknown slug returns a plain `404` and reveals nothing else about
+whether the tenant exists. This is the highest-risk data-leak surface in
+the system, so it is protected by three independent layers (design D9):
+
+1. **Query projection** — the underlying queries (`app/services/public.py`)
+   select only `property_id`/`name` and `property_id`/`check_in`/`check_out`.
+   No client name, phone, email, national id, price, payment amount, or
+   payment note is ever fetched into memory. This is the layer that
+   matters most: even if `response_model` is later widened by mistake, a
+   projected query still cannot leak a column it never selected.
+2. **A dedicated response model** (`app/schemas/public.py`) that shares no
+   base class with any authenticated schema and sets
+   `ConfigDict(extra="forbid")`.
+3. **A contract test** (`tests/test_public_contract.py`) that seeds a
+   distinctive client name, phone, price, and payment note, then asserts
+   none of those strings appear anywhere in the **raw response body** —
+   string-level, not field-level, so accidental nesting would be caught
+   too.
+
+Two independent exclusions apply and are tested separately, because they
+are different kinds of exclusion: inactive (`deleted_at IS NOT NULL`)
+properties never appear at all (`tests/test_public_inactive_property.py`),
+and cancelled reservations never appear as occupied nights
+(`tests/test_public_contract.py::test_public_availability_excludes_cancelled_reservations`)
+— this second exclusion was a gap in the original task list, closed
+during Phase 6 apply because the database's own `reservations_no_overlap`
+constraint already treats a cancelled reservation's nights as bookable
+(`WHERE (status <> 'cancelled')`), so the public calendar must agree.
+
+## Owner dashboard
+
+`GET /dashboard/summary?from=YYYY-MM-DD&to=YYYY-MM-DD` — authenticated
+(`TenantSessionDep`, same as every other owner-facing route). One
+endpoint, two windows, two numbers (design "Interfaces"): the caller
+computes `from`/`to` as a half-open `[from, to)` window — a month via
+`app.services.dates.month_window(year, month)` or an ISO Monday-Sunday
+week via `app.services.dates.week_window(any_date)` — and gets back:
+
+```json
+{
+  "collected": "5000.00",
+  "occupied_nights": 5,
+  "available_nights": 26,
+  "properties": [
+    { "property_id": "…", "occupied_nights": 5, "available_nights": 26 }
+  ]
+}
+```
+
+- `collected` is **cash basis only** (owner-dashboard spec) — the signed
+  sum of `payments.amount` with `paid_on` in `[from, to)`, regardless of
+  the related reservation's stay dates. A deposit paid in October for a
+  January stay counts in October, never in January. Refunds (negative
+  amounts) reduce it naturally. There is deliberately no second,
+  accrual-basis income metric.
+- `occupied_nights`/`available_nights` are computed via Postgres
+  `daterange` intersection against each non-cancelled reservation
+  (`app/services/dashboard.py`), grouped per property for the
+  `properties` breakdown.
+- **The two soft-delete rules point in opposite directions, deliberately
+  (design D8) — do not "fix" this asymmetry:** `collected` counts payments
+  on **every** property, active or not (money already received is not
+  un-earned by retiring a cabin), while `available_nights`'s denominator
+  counts **only active** properties (a retired cabin has no nights to
+  sell).
+
+**Gotcha found and fixed during Phase 6 apply.** The first implementation
+of the occupancy query built `daterange(r.check_in, r.check_out, '[)')`
+directly against columns that can be `NULL` from a `LEFT JOIN` (a property
+with no matching reservation, or one excluded because it is cancelled).
+In Postgres, a `NULL` range bound means **unbounded**, not "no value" —
+so `daterange(NULL, NULL, '[)')` is the *entire* range from `-infinity` to
+`+infinity`, and intersecting it with the requested window returned the
+whole window as "occupied". Every property with zero qualifying
+reservations was silently reported as 100% occupied instead of 100%
+available. Fixed with an explicit `CASE WHEN r.id IS NULL THEN 0 ELSE ...
+END` guard; caught by this feature's own tests
+(`tests/test_dashboard_availability.py`) before it ever reached a
+response.
+
 ## Project layout
 
 ```
@@ -247,14 +347,21 @@ app/
     auth.py           # RegisterRequest, LoginRequest, TokenResponse, MeResponse
     property.py         # PropertyCreate/Update/Read (is_active computed_field)
     client.py            # ClientCreate/Update/Read (is_active computed_field)
+    public.py             # PublicAvailability/OccupiedRange (D9, no shared base class)
+    dashboard.py            # DashboardSummary/PropertyOccupancyRead
   api/
-    deps.py           # PrincipalDep (verifies JWT), TenantSessionDep (sets app.tenant_id)
+    deps.py           # PrincipalDep, TenantSessionDep, PublicSessionDep (D9)
     routers/
       auth.py          # /auth/register, /auth/login, /me
       properties.py     # /properties CRUD
       clients.py          # /clients CRUD (POST is find-or-create-or-reactivate)
+      public.py             # GET /public/{tenant_slug}/availability (no auth)
+      dashboard.py            # GET /dashboard/summary
   services/
     clients.py         # upsert_or_reactivate_client (design D8)
+    dates.py             # today_ar, month_window, week_window (pure, no DB)
+    public.py              # column-projected public availability query (D9)
+    dashboard.py             # collected + occupied/available nights aggregation
 docker/
   initdb/01-roles.sql   # Cluster-level role creation (D5)
 scripts/
@@ -278,4 +385,16 @@ tests/
   test_clients.py                   # client CRUD, find-or-create-or-reactivate, 23505 backstop
   test_isolation_properties_clients.py  # 3-tenant cross-isolation, one test per endpoint x resource
   test_client_reactivation.py           # client id stability across delete/reactivate cycles
+  test_public_contract.py               # D9 leak test (raw body) + occupied-range + cancelled-exclusion
+  test_public_inactive_property.py      # inactive property absent from public, visible authenticated
+  test_date_windows.py                  # month_window/week_window unit tests, no DB
+  test_dashboard_collected.py           # cash-basis bucketing, refunds, active+inactive properties
+  test_dashboard_availability.py        # cancelled exclusion, inactive denominator, Dec/Jan straddle
+  test_isolation_dashboard.py           # 3-tenant cross-isolation for GET /dashboard/summary
 ```
+
+Note: this tree has been kept up to date through Phase 6 only for the
+files each phase's own README task explicitly named; `reservations.py`
+and `payments.py` (models/schemas/routers, Phase 4/5) were never added to
+this listing by those phases' apply passes and remain a pre-existing gap,
+not introduced here.
