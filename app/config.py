@@ -6,13 +6,25 @@ default secret in source is how a staging key ends up in production
 follows the same rule for the same reason (design D20): a default of
 "development" would make the production migrator-credential check below
 fail open on a forgotten variable, which is the only way it can fail.
+`cors_allowed_origins` follows the same no-default rule too (design D22),
+but for a different reason: an *absent* variable means nobody ever
+decided the CORS policy, whereas an explicit empty string is a legal,
+deliberate answer ("no browser access") -- only a missing variable is
+refused.
 """
 
 import os
 from functools import lru_cache
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _split_origins(value: str) -> list[str]:
+    """A comma-separated origin list, trimmed and with empty entries
+    dropped. `""` (the legal "no browser access" answer) correctly splits
+    to `[]`, not `[""]`."""
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
 class Settings(BaseSettings):
@@ -30,6 +42,33 @@ class Settings(BaseSettings):
     # Not a secret and not dangerous when wrong -- a default is fine here,
     # unlike jwt_secret/registration_token/environment above (design D23).
     log_level: str = "INFO"
+    # Declared as `str`, NOT `list[str]` (design D22's implementation
+    # note): pydantic-settings attempts a JSON decode for complex env
+    # types, so a plain comma-separated value like
+    # `CORS_ALLOWED_ORIGINS=https://a,https://b` would fail to parse with
+    # a confusing error. Split via `_split_origins` in the `cors_origins`
+    # property below instead.
+    cors_allowed_origins: str
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def _reject_wildcard_origin(cls, value: str) -> str:
+        # Rejected by a validator, at boot -- not by review discipline
+        # (design D22). An empty list already expresses "no frontend
+        # configured"; a wildcard expresses nothing except that someone
+        # was unblocking themselves.
+        if "*" in _split_origins(value):
+            raise ValueError(
+                "cors_allowed_origins must not contain '*' -- wildcard "
+                "browser origins are rejected at boot, not by review "
+                "(design D22); use an explicit, empty value for "
+                "'no browser access, deliberately' instead"
+            )
+        return value
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return _split_origins(self.cors_allowed_origins)
 
     @model_validator(mode="after")
     def _reject_migrator_credential_in_production(self) -> "Settings":

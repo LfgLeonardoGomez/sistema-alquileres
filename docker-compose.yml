@@ -54,6 +54,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env - copy .env.example}
       REGISTRATION_TOKEN: ${REGISTRATION_TOKEN:?set REGISTRATION_TOKEN in .env - copy .env.example}
       ENVIRONMENT: development
+      # Required, no default (design D22) -- empty here since this project
+      # has no frontend yet; override in .env once one exists.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -89,6 +92,11 @@ services:
       JWT_SECRET: test-secret-padded-to-32-bytes-min
       REGISTRATION_TOKEN: test-registration-token
       ENVIRONMENT: test
+      # Literal throwaway value, same rationale as the other test secrets
+      # above -- a real origin is only needed by test_cors.py's own cases,
+      # which set CORS_ALLOWED_ORIGINS per-subprocess instead of relying
+      # on this one.
+      CORS_ALLOWED_ORIGINS: https://configured-origin.example.com
     depends_on:
       db-test:
         condition: service_healthy

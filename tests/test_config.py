@@ -19,6 +19,10 @@ BASE_ENV = {
     "JWT_SECRET": "unit-test-secret-padded-to-32-bytes",
     "REGISTRATION_TOKEN": "unit-test-registration-token",
     "ENVIRONMENT": "development",
+    # Required, no default (design D22) -- empty is the legal "no browser
+    # access, deliberately" answer, and the minimal-impact choice for
+    # every test in this file that isn't specifically about CORS.
+    "CORS_ALLOWED_ORIGINS": "",
 }
 
 

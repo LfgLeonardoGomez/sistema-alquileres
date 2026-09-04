@@ -207,6 +207,7 @@ Environment variables, set via `pydantic-settings` (`app/config.py`):
 | `REGISTRATION_TOKEN` | Yes, **no default** | Shared secret required in the `X-Registration-Token` header on `POST /auth/register` — gates self-registration so anonymous tenant creation is not open on a public host. |
 | `ENVIRONMENT` | Yes, **no default** | Same no-default rule as the two secrets above, and for the same reason (design D20): a default of `development` would make the check below fail open on a forgotten variable. Set to `production` to enable it. |
 | `LOG_LEVEL` | No, default `INFO` | Root logger level. Not a secret and not dangerous when wrong -- unlike the settings above, a default is fine here (design D23). `DEBUG` is safe to raise for local debugging: `sqlalchemy.engine` is pinned to `WARNING` independently of this setting, so raising `LOG_LEVEL` never turns on SQL bound-parameter logging (password hashes, phone numbers, emails) as a side effect. `WARNING` is a supported value but loses the per-request access log line. |
+| `CORS_ALLOWED_ORIGINS` | Yes, **no default** | Comma-separated browser origins allowed on owner-scoped routes (design D22). Required for the same reason as the settings above -- an *absent* variable means nobody ever decided the CORS policy -- but unlike them, an **explicit empty value is a legal answer**: `CORS_ALLOWED_ORIGINS=` means "no browser access, deliberately" (this project has no frontend yet). The literal value `*`, anywhere in the comma-separated list, is **rejected at boot by a field validator**, not by review. `/public/{tenant_slug}/availability` shares this same allow-list rather than having its own -- CORS is not access control, and the endpoint is already unauthenticated and scrapeable by design (D9), so a second policy would be a second thing to get wrong for zero benefit. |
 
 **When `ENVIRONMENT=production`, the app refuses to boot if
 `MIGRATOR_DATABASE_URL` is present anywhere in the process environment**
@@ -330,6 +331,33 @@ and the constraint name:
 ```json
 {"timestamp": "2026-09-04T16:43:07.077102+00:00", "level": "WARNING", "logger": "app.db", "constraint": "clients_tenant_phone_uq", "user_id": "0f72fc67-64ff-4814-8f2f-74ad23a92e50", "event": "integrity_error", "table": "clients", "sqlstate": "23505", "tenant_id": "756da242-b948-4cbd-8231-9f8d70d031ea", "request_id": "61fc03c9-5d8a-459f-afe7-8b0a494d0d54"}
 ```
+
+## CORS
+
+`CORSMiddleware` (design D22) is registered so that the middleware
+nesting order, outermost to innermost, is **correlation -> CORS ->
+routes** -- a rejected preflight still gets a correlation id and a log
+line, and CORS still wraps every route including a future `429`.
+`Starlette.add_middleware` inserts at the front of the middleware list on
+every call, so registering CORS *before* correlation in `app/main.py`'s
+code is what keeps correlation outermost, not the other way around --
+verified directly against Starlette's `build_middleware_stack` source
+rather than assumed.
+
+- `allow_origins` comes from `CORS_ALLOWED_ORIGINS` (see Configuration
+  above); `*` is rejected at boot.
+- `allow_credentials=False` -- authentication is a bearer token, not a
+  cookie, so there is nothing to send credentialed CORS requests for.
+- `allow_headers` includes `Authorization`, `Content-Type`,
+  `X-Registration-Token` (or a browser-originated `POST /auth/register`
+  is blocked purely by CORS header rejection), and `X-Request-ID`.
+- `expose_headers` includes `X-Request-ID` -- a response header on the
+  wire is invisible to browser JavaScript unless explicitly exposed; the
+  whole point of echoing the correlation id back would be silently
+  defeated without this.
+- `/public/{tenant_slug}/availability` deliberately shares this same
+  policy rather than having its own (see the `CORS_ALLOWED_ORIGINS` row
+  above).
 
 ## Authentication
 
@@ -501,8 +529,8 @@ response.
 
 ```
 app/
-  main.py            # FastAPI app, GET /health, registers routers + IntegrityError handler
-  config.py          # pydantic-settings; secrets have no defaults, JWT_SECRET min 32 bytes
+  main.py            # FastAPI app, GET /health, registers CORS + correlation middleware, routers + IntegrityError handler
+  config.py          # pydantic-settings; secrets have no defaults, JWT_SECRET min 32 bytes, CORS_ALLOWED_ORIGINS validated against '*'
   security.py        # Argon2id hashing, JWT issuance/decoding (design D10)
   logging.py         # JSON formatter (allowlist), correlation contextvar, describe_db_error (D23)
   middleware.py      # CorrelationMiddleware: X-Request-ID in/out, access log line (D23)
@@ -559,6 +587,7 @@ tests/
   test_logging_redaction.py         # No log line leaks a login password or a registration token (D23)
   test_correlation.py               # X-Request-ID generated/reused/validated; same id on every log line incl. a forced 500 (D23)
   test_logging_db_diagnostics.py    # A 23505 logs sqlstate+constraint, never the conflicting phone number (D23)
+  test_cors.py                      # * rejected at boot, configured/unconfigured origins, X-Registration-Token preflight, /public shares the policy (D22)
   test_seed.py
   test_rls_structural.py            # pg_catalog: every tenant_id table has RLS enabled AND forced
   test_schema_is_migrated.py        # alembic_version == head; no pending autogenerate diff (D17)
