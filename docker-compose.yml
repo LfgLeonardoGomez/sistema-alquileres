@@ -61,5 +61,34 @@ services:
         condition: service_healthy
     command: ["pytest", "-v"]
 
+  # Throwaway service, slice 1 only (design D16). Deleted, along with
+  # `parity`, in the same commit that deletes app/db/bootstrap.py -- see
+  # scripts/verify_schema_parity.py's module docstring for why this check
+  # is a one-shot gate and not a standing net.
+  db-parity:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: alquileres_parity
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d alquileres_parity"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  parity:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db-parity:5432/alquileres_parity
+    depends_on:
+      db-parity:
+        condition: service_healthy
+    command: ["python", "-m", "scripts.verify_schema_parity"]
+
 volumes:
   db-data:
