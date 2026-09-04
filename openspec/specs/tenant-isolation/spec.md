@@ -22,6 +22,9 @@ The system MUST enable PostgreSQL Row-Level Security on every tenant-owned table
 
 The policy MUST be granted `FOR ALL` to both the application role (`alquileres_app`) and the schema-owning migrator/seed role (`alquileres_migrator`), through the identical `tenant_id` predicate — this is not a bypass, and neither role MUST hold `BYPASSRLS`. This dual grant is required because every tenant-owned table also has `FORCE ROW LEVEL SECURITY` enabled, which subjects the table owner to RLS as well; in PostgreSQL, a role with no applicable policy on a forced-RLS table receives zero rows, not an implicit bypass. Without the migrator named on the policy, it could not seed or fixture tenant-scoped data at all.
 
+**This guarantee MUST hold on the schema produced by the system's single schema-construction path** (see `schema-migrations`), not merely on some schema built by any available means. A schema built by an alternate, non-authoritative path MUST NOT be treated as satisfying this requirement, and the test suite that verifies this requirement MUST run against the schema produced by that single construction path — never against a schema built by a bypassed or divergent mechanism.
+
+
 #### Scenario: RLS blocks a query missing the app-level filter
 
 - GIVEN two tenants A and B each with reservations
@@ -45,6 +48,12 @@ The policy MUST be granted `FOR ALL` to both the application role (`alquileres_a
 - GIVEN `FORCE ROW LEVEL SECURITY` is enabled on a tenant-owned table and `alquileres_migrator` owns that table
 - WHEN `alquileres_migrator` sets `app.tenant_id` via `set_config` and inserts a seed row
 - THEN the insert MUST succeed because `alquileres_migrator` is named on the `tenant_isolation` policy — not because it bypasses RLS or is exempt as owner
+
+#### Scenario: RLS holds on the schema produced by the single construction path
+
+- GIVEN the schema has been built through the system's single schema-construction path (migrations, not an alternate bootstrap path)
+- WHEN the existing `pg_catalog`/`pg_policies` structural audit runs against that schema
+- THEN it MUST find `relrowsecurity`, `relforcerowsecurity`, and the `tenant_isolation` policy present on every tenant-owned table, with no divergence from what the previously-used bootstrap-built schema showed
 
 ### Requirement: Cross-Tenant Isolation Verified Per Endpoint
 
