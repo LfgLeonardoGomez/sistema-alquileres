@@ -128,24 +128,43 @@ implementing the change itself is a separate, still-open gate per
 
 ## Phase 3: Structured logging + correlation + redaction (`request-logging`) — single commit per numbered group below
 
-- [ ] 3.1 `app/config.py`: add `log_level: str = "INFO"` (has a default — not a secret, not a dangerous-when-wrong setting).
+- [x] 3.1 `app/config.py`: add `log_level: str = "INFO"` (has a default — not a secret, not a dangerous-when-wrong setting).
 
-- [ ] 3.2 [RED] `tests/test_logging_redaction.py`: a `POST /auth/login` with a known password emits no log line containing that password, regardless of outcome.
-- [ ] 3.3 [RED] same file: a `POST /auth/register` with a known `X-Registration-Token` value emits no log line containing that token, regardless of outcome.
-- [ ] 3.4 [GREEN] `app/logging.py`: create — JSON formatter emitting exactly an allowlist of fields (`timestamp, level, logger, event, request_id, method, path, status, duration_ms, tenant_id, user_id` plus `extra` keys validated against an explicit allowlist); **anything not on the allowlist is dropped, not redacted**. `exc_info` renders as `{"type", "frames": [{file, line, function}]}` — never the exception's `str()`, `repr()`, or `args`. `sqlalchemy.engine` logger pinned to `WARNING` independently of the root level (Layer 4 — otherwise `LOG_LEVEL=DEBUG` turns on bound-parameter logging: password hashes, phone numbers, emails). Wire root logging config in `app/main.py` using this formatter and `settings.log_level`.
-- [ ] 3.5 Re-run 3.2/3.3 → green.
+- [x] 3.2 [RED] `tests/test_logging_redaction.py`: a `POST /auth/login` with a known password emits no log line containing that password, regardless of outcome.
+- [x] 3.3 [RED] same file: a `POST /auth/register` with a known `X-Registration-Token` value emits no log line containing that token, regardless of outcome.
 
-- [ ] 3.6 [RED] `tests/test_correlation.py`: every response carries `X-Request-ID`; an inbound `X-Request-ID` matching `^[A-Za-z0-9._-]{1,64}$` is reused, an invalid one is discarded and a fresh UUID4 generated instead; every log line emitted while handling one request carries the same correlation id — including a forced 500.
-- [ ] 3.7 [GREEN] `app/logging.py`: add a correlation contextvar holding a **mutable dict**, set fresh by the middleware and mutated in place elsewhere (never rebound — document the working-vs-broken distinction in the module docstring, per D23's threadpool/`copy_context()` gotcha), plus a `logging.Filter` on the root handler attaching `request_id`/`tenant_id`/`user_id` from that dict to every record. `app/middleware.py`: create — `CorrelationMiddleware` validates/generates the correlation id, sets the contextvar dict fresh, wraps `call_next` in try/except (logs `status=500` with the exception **type**, re-raises), emits one `event=request` log line at completion (`method`, `path` with query string stripped, `status`, `duration_ms`, `request_id`, `tenant_id`, `user_id`), echoes `X-Request-ID` on every response including error responses. Never calls `request.body()` (Layer 5).
-- [ ] 3.8 `app/api/deps.py`: wherever the current principal is resolved (JWT verification), mutate the correlation contextvar dict in place with `tenant_id`/`user_id` — never rebind the contextvar itself.
-- [ ] 3.9 `app/main.py`: register `CorrelationMiddleware` outermost, wire logging setup at import time.
-- [ ] 3.10 Re-run 3.6 → green, including the forced-500 case.
+  **Honest note:** no natural RED state existed here (same shape as task 1.11's precedent) — before `app/logging.py` exists, nothing in the codebase logs anything at all on these two endpoints (no request-level logging exists yet, and the DB layer never binds the raw password/token as a SQL parameter), so the assertion passed vacuously on the first run. Recorded honestly rather than manufacturing a failure; both tests still exercise the real HTTP paths end to end and keep passing after 3.4/3.5.
 
-- [ ] 3.11 [RED] `tests/test_logging_db_diagnostics.py`: force a `23505` on `clients_tenant_phone_uq` with a known, distinctive phone number; assert an emitted log line records the SQLSTATE and constraint name, and no emitted log line contains the conflicting phone number.
-- [ ] 3.12 [GREEN] `app/logging.py`: `describe_db_error(exc) -> dict` — the only sanctioned accessor for driver diagnostics, returns exactly `{"sqlstate", "constraint", "table"}` from psycopg's `Diagnostic` (`constraint_name`, `table_name`); never reads `message_detail`/`message_primary`. `app/errors.py`: `handle_integrity_error` logs `describe_db_error(exc)` and nothing else — no `exc.orig` string, no `str(exc)`, no `repr(exc)` anywhere.
-- [ ] 3.13 Re-run 3.11 → green.
+- [x] 3.4 [GREEN] `app/logging.py`: create — JSON formatter emitting exactly an allowlist of fields (`timestamp, level, logger, event, request_id, method, path, status, duration_ms, tenant_id, user_id` plus `extra` keys validated against an explicit allowlist); **anything not on the allowlist is dropped, not redacted**. `exc_info` renders as `{"type", "frames": [{file, line, function}]}` — never the exception's `str()`, `repr()`, or `args`. `sqlalchemy.engine` logger pinned to `WARNING` independently of the root level (Layer 4 — otherwise `LOG_LEVEL=DEBUG` turns on bound-parameter logging: password hashes, phone numbers, emails). Wire root logging config in `app/main.py` using this formatter and `settings.log_level`.
+- [x] 3.5 Re-run 3.2/3.3 → green.
 
-- [ ] 3.14 `README.md`: document `LOG_LEVEL` (default `INFO`; `DEBUG` is safe due to the `sqlalchemy.engine` pin; `WARNING` loses the access log), JSON-lines-to-stdout, and `X-Request-ID` correlation.
+- [x] 3.6 [RED] `tests/test_correlation.py`: every response carries `X-Request-ID`; an inbound `X-Request-ID` matching `^[A-Za-z0-9._-]{1,64}$` is reused, an invalid one is discarded and a fresh UUID4 generated instead; every log line emitted while handling one request carries the same correlation id — including a forced 500.
+
+  **Observed RED:** all 5 cases failed as expected (no middleware exists yet) before 3.7-3.9.
+
+- [x] 3.7 [GREEN] `app/logging.py`: add a correlation contextvar holding a **mutable dict**, set fresh by the middleware and mutated in place elsewhere (never rebound — documented in the module docstring, per D23's threadpool/`copy_context()` gotcha). `app/middleware.py`: create — `CorrelationMiddleware` validates/generates the correlation id, sets the contextvar dict fresh, wraps `call_next` in try/except (logs `status=500` with the exception **type**, re-raises), emits one `event=request` log line at completion (`method`, `path` with query string stripped, `status`, `duration_ms`, `request_id`, `tenant_id`, `user_id`), echoes `X-Request-ID` on every response including error responses. Never calls `request.body()` (Layer 5).
+
+  **Deviation from the task's literal wording, discovered empirically:** correlation fields are attached via `logging.setLogRecordFactory`, not a `logging.Filter` on the root handler. A `logging.Filter` attached to a *logger* (as opposed to a *handler*) only runs via `Logger.handle()` on the logger a call was made directly on — `Logger.callHandlers()` walks up the hierarchy invoking each ancestor's *handlers*, never each ancestor's own `.filter()`. A root-logger filter therefore silently never fires for a record that reaches root by propagating up from a named child logger (`"app.request"`, `"sqlalchemy.engine"`, ...), which is every record this application emits. Verified this failure mode directly (`caplog.records` came back empty even though the log call executed) before switching to `setLogRecordFactory`, which wraps record *creation* itself and is seen by every handler unconditionally. Documented in `app/logging.py`'s module docstring.
+- [x] 3.8 `app/api/deps.py`: wherever the current principal is resolved (JWT verification), mutate the correlation contextvar dict in place with `tenant_id`/`user_id` — never rebind the contextvar itself.
+- [x] 3.9 `app/main.py`: register `CorrelationMiddleware` outermost, wire logging setup at import time.
+- [x] 3.10 Re-run 3.6 → green, including the forced-500 case.
+
+  **Real bug found and fixed along the way, unrelated to the middleware itself:** `migrations/env.py`'s standard Alembic-scaffold `fileConfig(config.config_file_name)` call defaults to `disable_existing_loggers=True`, which silently sets `.disabled = True` on every pre-existing Python logger not named in `alembic.ini`'s `[loggers]` section — including `app.request`, created when `app.main` is imported at test-collection time, before `tests/conftest.py`'s session-scoped fixture ever runs a migration. `Logger.isEnabledFor()` checks `self.disabled` before anything else, so `logger.info(...)` became a permanent silent no-op the moment the first migration ran, with no exception and no visible symptom besides empty `caplog.records`. Fixed by passing `disable_existing_loggers=False` explicitly in `migrations/env.py`, documented inline there. Diagnosed by monkey-patching the specific logger's `__setattr__` to trace who set `.disabled`, which pointed straight at `migrations/env.py:32` via `alembic.command.downgrade` → `env.py`'s `fileConfig()`. Saved to engram (`sistemaalquileres`, "Alembic fileConfig disables app loggers silently in tests").
+
+- [x] 3.11 [RED] `tests/test_logging_db_diagnostics.py`: force a `23505` on `clients_tenant_phone_uq` with a known, distinctive phone number; assert an emitted log line records the SQLSTATE and constraint name, and no emitted log line contains the conflicting phone number.
+
+  **Observed RED:** `expected a log line carrying the SQLSTATE` — `assert []` (no diagnostic logging exists yet).
+
+- [x] 3.12 [GREEN] `app/logging.py`: `describe_db_error(exc) -> dict` — the only sanctioned accessor for driver diagnostics, returns exactly `{"sqlstate", "constraint", "table"}` from psycopg's `Diagnostic` (`constraint_name`, `table_name`); never reads `message_detail`/`message_primary`. `app/errors.py`: `handle_integrity_error` logs `describe_db_error(exc)` and nothing else — no `exc.orig` string, no `str(exc)`, no `repr(exc)` anywhere.
+- [x] 3.13 Re-run 3.11 → green.
+
+  **Observed, verbatim, via a real duplicate-phone `PATCH /clients/{id}` conflict:**
+  ```json
+  {"timestamp": "2026-09-04T16:43:07.077102+00:00", "level": "WARNING", "logger": "app.db", "constraint": "clients_tenant_phone_uq", "user_id": "0f72fc67-64ff-4814-8f2f-74ad23a92e50", "event": "integrity_error", "table": "clients", "sqlstate": "23505", "tenant_id": "756da242-b948-4cbd-8231-9f8d70d031ea", "request_id": "61fc03c9-5d8a-459f-afe7-8b0a494d0d54"}
+  ```
+  The conflicting phone number (`+549555ba5056c0a` in that run) appears nowhere in this or any other emitted line.
+
+- [x] 3.14 `README.md`: document `LOG_LEVEL` (default `INFO`; `DEBUG` is safe due to the `sqlalchemy.engine` pin; `WARNING` loses the access log), JSON-lines-to-stdout, and `X-Request-ID` correlation.
 
 ## Phase 4: CORS (`cors-policy`) — single commit per numbered group below
 

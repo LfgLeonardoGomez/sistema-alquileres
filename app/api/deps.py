@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app import errors
 from app.db.session import SessionLocal, tenant_scoped_session
+from app.logging import get_context
 from app.security import decode_access_token
 
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -53,7 +54,14 @@ def get_current_principal(
         claims = decode_access_token(credentials.credentials)
     except jwt.InvalidTokenError as exc:
         raise errors.unauthorized("Invalid or expired token") from exc
-    return Principal(user_id=uuid.UUID(claims["sub"]), tenant_id=uuid.UUID(claims["tid"]))
+    principal = Principal(user_id=uuid.UUID(claims["sub"]), tenant_id=uuid.UUID(claims["tid"]))
+    # Mutate the correlation context dict IN PLACE -- never rebind it here.
+    # See app/logging.py's module docstring for why a rebind would silently
+    # break under the threadpool this sync dependency runs in.
+    context = get_context()
+    context["tenant_id"] = str(principal.tenant_id)
+    context["user_id"] = str(principal.user_id)
+    return principal
 
 
 PrincipalDep = Annotated[Principal, Depends(get_current_principal)]

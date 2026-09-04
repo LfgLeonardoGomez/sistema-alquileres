@@ -206,6 +206,7 @@ Environment variables, set via `pydantic-settings` (`app/config.py`):
 | `JWT_SECRET` | Yes, **no default**, min 32 bytes | Signs and verifies access tokens (HS256, 8h expiry). The app refuses to boot without it — a default secret in source is how a staging key reaches production. |
 | `REGISTRATION_TOKEN` | Yes, **no default** | Shared secret required in the `X-Registration-Token` header on `POST /auth/register` — gates self-registration so anonymous tenant creation is not open on a public host. |
 | `ENVIRONMENT` | Yes, **no default** | Same no-default rule as the two secrets above, and for the same reason (design D20): a default of `development` would make the check below fail open on a forgotten variable. Set to `production` to enable it. |
+| `LOG_LEVEL` | No, default `INFO` | Root logger level. Not a secret and not dangerous when wrong -- unlike the settings above, a default is fine here (design D23). `DEBUG` is safe to raise for local debugging: `sqlalchemy.engine` is pinned to `WARNING` independently of this setting, so raising `LOG_LEVEL` never turns on SQL bound-parameter logging (password hashes, phone numbers, emails) as a side effect. `WARNING` is a supported value but loses the per-request access log line. |
 
 **When `ENVIRONMENT=production`, the app refuses to boot if
 `MIGRATOR_DATABASE_URL` is present anywhere in the process environment**
@@ -284,6 +285,51 @@ belongs to that future change. Saying that plainly is better than
 implying the packaging claims above are covered by the test suite —
 they are not; the test suite runs entirely inside the `dev`/`test`
 images and never builds `prod`.
+
+## Logging and correlation
+
+Every request is logged as one JSON line to stdout at completion (design
+D23) -- containers log to stdout; log aggregation is the deployment's job,
+not this application's. There is no `console`/human-readable format
+option: a second renderer would be a second place a redaction rule could
+be missed. `docker compose logs api | jq` covers local ergonomics.
+
+**Redaction is an allowlist, not a denylist.** The JSON formatter
+(`app/logging.py::JsonFormatter`) renders exactly a fixed set of fields
+(`timestamp`, `level`, `logger`, `event`, `request_id`, `method`, `path`,
+`status`, `duration_ms`, `tenant_id`, `user_id`, plus `sqlstate`/
+`constraint`/`table` for database diagnostics) -- **anything not on that
+list is dropped, not redacted**, including a log call's own message text.
+A field that is never rendered cannot leak a value nobody anticipated. An
+exception's `str()`, `repr()`, or `args` are never rendered either: `exc_info`
+renders only as `{"type": "...", "frames": [...]}`. Database constraint
+violations are logged through `app/logging.py::describe_db_error`, the
+only sanctioned accessor for driver diagnostics -- it returns exactly
+`{"sqlstate", "constraint", "table"}` and never the driver's raw detail
+text, which can embed the offending row's data (e.g. a client's phone
+number on a `clients_tenant_phone_uq` conflict).
+
+**Correlation.** Every request is assigned a correlation id
+(`app/middleware.py::CorrelationMiddleware`, registered outermost --
+before CORS in Phase 4, before every route): reused from an inbound
+`X-Request-ID` header when it matches `^[A-Za-z0-9._-]{1,64}$`, generated
+fresh (UUID4) otherwise -- an inbound value is attacker-controlled and
+goes straight into a log line, so an unvalidated one could forge log
+entries or break JSON-lines framing with an embedded newline. The id is
+echoed back on `X-Request-ID` and attached to every log line emitted
+while handling that request, including SQLAlchemy's own lines, via a
+`logging.setLogRecordFactory` hook (not a `logging.Filter` -- see
+`app/logging.py`'s module docstring for why the more obvious filter-based
+approach does not work for records that reach the root logger by
+propagating up from a named child logger).
+
+**Example: a real `23505` on `clients_tenant_phone_uq`, verbatim.** Note
+the conflicting phone number is nowhere in the line -- only the SQLSTATE
+and the constraint name:
+
+```json
+{"timestamp": "2026-09-04T16:43:07.077102+00:00", "level": "WARNING", "logger": "app.db", "constraint": "clients_tenant_phone_uq", "user_id": "0f72fc67-64ff-4814-8f2f-74ad23a92e50", "event": "integrity_error", "table": "clients", "sqlstate": "23505", "tenant_id": "756da242-b948-4cbd-8231-9f8d70d031ea", "request_id": "61fc03c9-5d8a-459f-afe7-8b0a494d0d54"}
+```
 
 ## Authentication
 
@@ -458,6 +504,8 @@ app/
   main.py            # FastAPI app, GET /health, registers routers + IntegrityError handler
   config.py          # pydantic-settings; secrets have no defaults, JWT_SECRET min 32 bytes
   security.py        # Argon2id hashing, JWT issuance/decoding (design D10)
+  logging.py         # JSON formatter (allowlist), correlation contextvar, describe_db_error (D23)
+  middleware.py      # CorrelationMiddleware: X-Request-ID in/out, access log line (D23)
   errors.py          # Central HTTP error mapping: auth (D10) + SQLSTATE dispatch (D11)
   db/
     base.py          # SQLAlchemy 2.0 declarative Base
@@ -508,6 +556,9 @@ tests/
   conftest.py                       # Migrates (downgrade base -> upgrade head) + seeds the test DB
   test_health.py
   test_config.py                    # Settings refuse to boot without secrets/ENVIRONMENT, or in prod with MIGRATOR_DATABASE_URL set (D20)
+  test_logging_redaction.py         # No log line leaks a login password or a registration token (D23)
+  test_correlation.py               # X-Request-ID generated/reused/validated; same id on every log line incl. a forced 500 (D23)
+  test_logging_db_diagnostics.py    # A 23505 logs sqlstate+constraint, never the conflicting phone number (D23)
   test_seed.py
   test_rls_structural.py            # pg_catalog: every tenant_id table has RLS enabled AND forced
   test_schema_is_migrated.py        # alembic_version == head; no pending autogenerate diff (D17)

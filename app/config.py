@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(min_length=32)
     registration_token: str
     environment: str
+    # Not a secret and not dangerous when wrong -- a default is fine here,
+    # unlike jwt_secret/registration_token/environment above (design D23).
+    log_level: str = "INFO"
 
     @model_validator(mode="after")
     def _reject_migrator_credential_in_production(self) -> "Settings":

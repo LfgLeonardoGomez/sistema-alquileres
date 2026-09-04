@@ -16,6 +16,20 @@ register their tables) is deliberately NOT this module's job.
 `app/models/__init__.py` does that -- imported by `tests/conftest.py` for
 exactly this side effect, earlier in the same test process, before this
 module ever runs.
+
+`fileConfig(..., disable_existing_loggers=False)` -- the non-default
+argument here matters (design D23). `logging.config.fileConfig`'s own
+default is `disable_existing_loggers=True`: it disables every logger that
+already exists and is not explicitly named in `alembic.ini`'s `[loggers]`
+section. In the test suite, `app.main` (and therefore `app.logging`'s
+`configure_logging()` and the `app.request` logger `app/middleware.py`
+creates) is imported once, up front, before `tests/conftest.py`'s
+session-scoped fixture ever runs a migration -- so without this flag, the
+very first `alembic downgrade`/`upgrade` call in the session would
+silently set `logging.getLogger("app.request").disabled = True` for the
+rest of the process, and every request-logging test would fail with zero
+captured records and no explanation. Discovered exactly that way while
+implementing `tests/test_correlation.py`.
 """
 
 import os
@@ -29,7 +43,7 @@ from app.db.base import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

@@ -33,9 +33,15 @@ Raw driver messages are never returned to the client; only a stable
 `{"detail", "code"}` shape is.
 """
 
+import logging
+
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
+
+from app.logging import describe_db_error
+
+logger = logging.getLogger("app.db")
 
 
 def unauthorized(detail: str = "Missing or invalid credentials") -> HTTPException:
@@ -69,4 +75,9 @@ _DEFAULT_MAPPING = (status.HTTP_500_INTERNAL_SERVER_ERROR, "internal_error", "In
 def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
     sqlstate = getattr(exc.orig, "sqlstate", None)
     http_status, code, detail = _SQLSTATE_MAPPING.get(sqlstate, _DEFAULT_MAPPING)
+    # `describe_db_error(exc)` and nothing else -- never `exc.orig`'s raw
+    # message text, `str(exc)`, or `repr(exc)` (design D23, Layer 3): a
+    # `23505` on `clients_tenant_phone_uq` carries the conflicting row's
+    # data (e.g. a client's phone number) in that text.
+    logger.warning("", extra={"event": "integrity_error", **describe_db_error(exc)})
     return JSONResponse(status_code=http_status, content={"detail": detail, "code": code})
