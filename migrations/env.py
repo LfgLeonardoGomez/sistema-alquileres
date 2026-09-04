@@ -12,11 +12,10 @@ needs live metadata to diff against. Individual revision files under
 `Base.metadata` -- a revision is a snapshot of one moment in time.
 
 Population of `Base.metadata` (importing the six model modules so they
-register their tables) is deliberately NOT this module's job. Until commit
-8 of this change, `app/db/bootstrap.py` still exists and its import (kept
-alive by `tests/conftest.py` for exactly this side effect) populates
-`Base.metadata` earlier in the same test process, before this module ever
-runs. From commit 8 onward, `app/models/__init__.py` takes over that role.
+register their tables) is deliberately NOT this module's job.
+`app/models/__init__.py` does that -- imported by `tests/conftest.py` for
+exactly this side effect, earlier in the same test process, before this
+module ever runs.
 """
 
 import os

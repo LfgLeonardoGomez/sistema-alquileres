@@ -27,10 +27,8 @@ from sqlalchemy import Engine, create_engine, text
 # noqa: F401 -- import kept for its side effect: it registers every model
 # on Base.metadata, which migrations/env.py's target_metadata and
 # tests/test_schema_is_migrated.py's compare_metadata() check both depend
-# on. app/db/bootstrap.py itself is no longer called below. Removed, along
-# with this import, in the same commit that deletes bootstrap.py and moves
-# the model registration into app/models/__init__.py (design D13).
-from app.db import bootstrap  # noqa: F401
+# on (design D13).
+from app import models  # noqa: F401
 from app.main import app
 from app.security import create_access_token, decode_access_token, hash_password
 from scripts import seed as seed_script

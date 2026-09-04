@@ -14,6 +14,8 @@ Payments, and the Public Calendar + Owner Dashboard covered below. See
 - FastAPI (sync `def` path operations — see design D2)
 - SQLAlchemy 2.0 ORM + hand-written Pydantic I/O models (not SQLModel — see design D1)
 - PostgreSQL 16, driver: `psycopg` (v3)
+- Alembic — the single schema-construction path, used identically by
+  deployment and by the test suite (design D13)
 - pytest, run against real PostgreSQL inside Docker Compose
 
 ## Bring it up
@@ -29,15 +31,17 @@ The API listens on `http://localhost:8000`.
 
 ## Reset the database
 
-There are no migrations yet (see "Why no Alembic" below). To rebuild the
-schema from scratch and reseed development data:
+`scripts/reset_db.py` migrates the schema to head and (re)seeds
+development data. Despite its name, it is **not destructive** — it never
+drops a table (see "Migrations" below, design D18):
 
 ```bash
 docker compose run --rm api python -m scripts.reset_db
 ```
 
-This is destructive by design — it drops and recreates every table this
-project owns, then reseeds 3 development tenants:
+Safely re-runnable: `alembic upgrade head` is a no-op once already at
+head, and `scripts/seed.py` inserts the 3 development tenants with
+`ON CONFLICT (slug) DO NOTHING`:
 
 - `mar-del-tuyu-cabins`
 - `bariloche-lake-houses`
@@ -45,6 +49,13 @@ project owns, then reseeds 3 development tenants:
 
 Three tenants, not two: two tenants hide cross-tenant isolation bugs that
 leak in only one direction.
+
+**The name is a deliberately retained misnomer.** `reset_db.py` no longer
+resets anything — it migrates and seeds. Renamed would be more accurate;
+kept for muscle memory and because it is already wired into Compose and
+this README (owner's decision, design D18). If you need a truly empty
+schema, that is `alembic downgrade base` (below), run explicitly — there
+is no longer a single command that does both.
 
 ## Run the tests
 
@@ -69,34 +80,49 @@ A SQLite-backed test suite would report green while both central guarantees
 of this system were completely absent. Tests always run against a real
 Postgres container.
 
-## Why no Alembic (yet)
+## Migrations
 
-This project is greenfield: no real data, no consumers, and the schema is
-still changing daily. Writing and maintaining migrations for a shape that
-isn't stable yet is friction with no payoff.
+There is exactly one way this schema comes into existence: Alembic. The
+test suite uses the same mechanism (`tests/conftest.py`), so no test can
+pass against a schema production never runs (design D13).
 
-Instead, `scripts/reset_db.py` is the single deterministic command that
-rebuilds the whole schema from the SQLAlchemy models (`app/db/bootstrap.py`),
-in order:
+```bash
+# Apply every migration up to the latest (what `scripts/reset_db.py` does)
+docker compose run --rm api alembic upgrade head
 
-1. `CREATE EXTENSION IF NOT EXISTS btree_gist`
-2. Drop and recreate every table SQLAlchemy tracks (`Base.metadata`)
-3. Enable + FORCE Row-Level Security and create the `tenant_isolation`
-   policy on every tenant-scoped table
-4. `GRANT` the minimum privileges to the `alquileres_app` role
-5. Seed development data
+# Roll back to nothing -- an explicit, typed, revision-scoped operator
+# action. There is no other command in this codebase that drops a table.
+docker compose run --rm api alembic downgrade base
 
-`Base.metadata.create_all()` alone would create the tables but **not** the
-RLS policies or grants — the tables would exist while tenant isolation
-silently did not. Step 3 and 4 are raw DDL that lives in exactly one place
-(`app/db/bootstrap.py`) so that risk can't be introduced by scattering it.
+# After changing a model in app/models/, generate the next migration.
+# ALWAYS review the generated file by hand before committing it --
+# autogenerate does not detect RLS policies, grants, or EXCLUDE
+# constraints (see migrations/versions/0001_baseline.py, which is
+# entirely hand-written for exactly this reason).
+docker compose run --rm api alembic revision --autogenerate -m "message"
+```
 
-This is a deliberate, recorded deviation from design decision D12
-(migration strategy via Alembic). Alembic will be introduced once the
-schema settles or real data exists — at that point, `alembic revision
---autogenerate` will not detect RLS policies, grants, or `EXCLUDE`
-constraints, so the baseline migration will have to be hand-written. That
-cost is postponed, not removed.
+`migrations/versions/0001_baseline.py` reproduces, as literal
+self-contained DDL, the schema this project built by hand until this
+point (`app/db/bootstrap.py`, now deleted): the `btree_gist` extension,
+all six tables with every constraint, the `reservations_no_overlap`
+`EXCLUDE` constraint, and — the part autogenerate cannot see — RLS,
+`FORCE ROW LEVEL SECURITY`, the `tenant_isolation` policy, and grants on
+every tenant-scoped table. It MUST NOT import `app.models` or
+`Base.metadata`: a migration is a snapshot of one moment, and importing
+live metadata would make it silently follow the code instead of staying
+fixed in time (`migrations/env.py` is the one file allowed to do that, for
+autogenerate).
+
+This baseline was verified once, mechanically, against the schema it
+replaces — built both ways in a throwaway database and diffed at the
+`pg_catalog` level (columns, constraints, indexes, RLS flags,
+`pg_policies` predicate text and roles, grants, extensions) — before that
+verification tooling was deleted along with `app/db/bootstrap.py`. What
+guards the schema now that verification is gone: `tests/test_rls_structural.py`
+(every `tenant_id` table has RLS + FORCE + a policy),
+`tests/test_schema_is_migrated.py` (the test database's `alembic_version`
+matches head, and there is no pending autogenerate diff).
 
 ## Database roles
 
@@ -106,7 +132,7 @@ cluster-level infrastructure):
 
 | Role | Used by | Properties |
 |---|---|---|
-| `alquileres_migrator` | `scripts/reset_db.py`, `scripts/seed.py`, test fixtures | Owns every table. Never used by the running API. |
+| `alquileres_migrator` | `alembic upgrade`/`downgrade`, `scripts/reset_db.py`, `scripts/seed.py`, test fixtures | Owns every table. Never used by the running API. |
 | `alquileres_app` | The API process, and the app under test | `NOSUPERUSER NOBYPASSRLS`, not the table owner, only explicit grants |
 
 RLS is bypassed by superusers, `BYPASSRLS` roles, and the table owner —
@@ -122,7 +148,7 @@ test fixtures and the seed script insert directly into tenant-scoped
 tables as the migrator (see `scripts/seed.py`'s successor for `users`, and
 `tests/conftest.py::seed_three_tenants`). So every `tenant_isolation`
 policy names **both** `alquileres_app, alquileres_migrator`
-(`app/db/bootstrap.py::apply_row_level_security`). This is not a bypass —
+(`migrations/versions/0001_baseline.py`). This is not a bypass —
 both roles go through the identical `tenant_id = current_setting(...)`
 predicate, and the migrator must `set_config('app.tenant_id', ...)` in the
 same transaction before any tenant-scoped write succeeds, exactly like the
@@ -138,9 +164,9 @@ Environment variables, set via `pydantic-settings` (`app/config.py`):
 | `JWT_SECRET` | Yes, **no default**, min 32 bytes | Signs and verifies access tokens (HS256, 8h expiry). The app refuses to boot without it — a default secret in source is how a staging key reaches production. |
 | `REGISTRATION_TOKEN` | Yes, **no default** | Shared secret required in the `X-Registration-Token` header on `POST /auth/register` — gates self-registration so anonymous tenant creation is not open on a public host. |
 
-`MIGRATOR_DATABASE_URL` is read directly by `scripts/reset_db.py` and
-`scripts/seed.py` (not part of the app's `Settings`) — it is never used by
-the running API process.
+`MIGRATOR_DATABASE_URL` is read directly by `migrations/env.py`,
+`scripts/reset_db.py`, and `scripts/seed.py` (not part of the app's
+`Settings`) — it is never used by the running API process.
 
 ### Secrets
 
@@ -337,8 +363,8 @@ app/
   db/
     base.py          # SQLAlchemy 2.0 declarative Base
     session.py       # Engine + SessionLocal (app role) + tenant_scoped_session (D4)
-    bootstrap.py     # THE authoritative schema DDL: extension, tables, RLS, grants
   models/
+    __init__.py      # Registers every model on Base.metadata (design D13)
     tenant.py        # Tenant (global, deliberately no RLS)
     user.py          # User (tenant-scoped, UNIQUE(tenant_id, email))
     property.py      # Property (tenant-scoped, soft delete)
@@ -371,16 +397,21 @@ app/
     dashboard.py     # collected + occupied/available nights aggregation
 docker/
   initdb/01-roles.sql  # Cluster-level role creation (D5)
+migrations/
+  env.py             # Reads MIGRATOR_DATABASE_URL; target_metadata = Base.metadata
+  script.py.mako     # Revision template
+  versions/
+    0001_baseline.py # Hand-written, self-contained: extension, tables, RLS/FORCE/policy/grants (D14)
 scripts/
-  reset_db.py        # The one command: reset + seed
-  seed.py            # Development seed data (3 tenants)
+  reset_db.py        # migrate to head + seed (non-destructive, retained misnomer -- D18)
+  seed.py            # Development seed data (3 tenants, ON CONFLICT DO NOTHING)
 tests/
-  conftest.py                       # Resets + seeds the test DB; seed_three_tenants, registered_owner
+  conftest.py                       # Migrates (downgrade base -> upgrade head) + seeds the test DB
   test_health.py
   test_config.py                    # Settings refuse to boot without secrets or on a short JWT_SECRET
-  test_bootstrap.py
   test_seed.py
   test_rls_structural.py            # pg_catalog: every tenant_id table has RLS enabled AND forced
+  test_schema_is_migrated.py        # alembic_version == head; no pending autogenerate diff (D17)
   test_schema_no_derived_columns.py # no total/completed/balance columns; paid_on has no DB default
   test_tenant_session.py            # tenant_scoped_session isolation, direct
   test_security.py                  # password hashing + JWT round-trip
