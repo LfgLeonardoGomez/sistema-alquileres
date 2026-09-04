@@ -90,9 +90,11 @@ implementing the change itself is a separate, still-open gate per
 
 **Commit 7 (D-step 7):**
 
-- [ ] 1.13 `scripts/reset_db.py`: replace the body with `alembic upgrade head` (in-process via `alembic.config.Config`/`alembic.command`) then `seed.run(engine)`. No `drop_all`, no drop of any kind (D18). Keeps its module path and its command (`python -m scripts.reset_db`) — the owner's decision to retain the name despite it no longer describing what the script does.
-- [ ] 1.14 `scripts/seed.py`: the `Tenant` insert becomes `ON CONFLICT (slug) DO NOTHING`, since nothing clears the table before it runs any more.
-- [ ] 1.15 [TEST] Run the updated `scripts.reset_db` against `db` end-to-end (or the equivalent Compose invocation) and confirm it migrates + seeds without error and is safely re-runnable. Full suite (`docker compose run --rm test`) still green.
+- [x] 1.13 `scripts/reset_db.py`: replace the body with `alembic upgrade head` (in-process via `alembic.config.Config`/`alembic.command`) then `seed.run(engine)`. No `drop_all`, no drop of any kind (D18). Keeps its module path and its command (`python -m scripts.reset_db`) — the owner's decision to retain the name despite it no longer describing what the script does.
+- [x] 1.14 `scripts/seed.py`: the `Tenant` insert becomes `ON CONFLICT (slug) DO NOTHING`, since nothing clears the table before it runs any more.
+- [x] 1.15 [TEST] Run the updated `scripts.reset_db` against `db` end-to-end (or the equivalent Compose invocation) and confirm it migrates + seeds without error and is safely re-runnable. Full suite (`docker compose run --rm test`) still green.
+
+  **Note:** the dev `db` volume held the pre-Alembic bootstrap-built schema (task 1.1's confirmed disposable state — 3 tenants, all other tables empty, no real data). Since D18 removes the only code path that could clear it, and no such path exists any more by design, the one-time cutover was a manual, explicit `docker volume rm` of `db-data` — a deliberate operator action outside any script, not a reintroduced destructive command. After that, `docker compose run --rm api python -m scripts.reset_db` was run twice in a row: first pass ran the migration (`Running upgrade -> 0001, baseline`) and seeded 3 tenants; second pass was a silent no-op on the migration (already at head) and left the same 3 tenants with no duplicates. `docker compose run --rm test`: 133 passed.
 
 **Commit 8 (D-step 8 — the point of no return; everything before this commit was individually revertible because `bootstrap.py` still existed):**
 

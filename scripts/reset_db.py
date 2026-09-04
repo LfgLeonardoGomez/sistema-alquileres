@@ -1,8 +1,12 @@
-"""The ONE command that recreates the database from scratch: extension ->
-tables -> RLS -> grants -> seed. This is the greenfield replacement for
-`alembic upgrade head` while the schema still changes daily (see engram:
-architecture/schema-bootstrap). It is destructive by design -- it drops and
-rebuilds every table this project owns.
+"""The dev-loop command that migrates the database to head and seeds
+development data. Retains its module path and command (`python -m
+scripts.reset_db`) by the owner's deliberate decision, despite no longer
+resetting anything (design D18) -- the name is a retained misnomer, not an
+oversight; see README.md.
+
+No `drop_all`, no drop of any kind. `alembic upgrade head` is idempotent
+against an already-migrated database, and `scripts/seed.py::run()` is
+`ON CONFLICT (slug) DO NOTHING` -- so this command is safely re-runnable.
 
 Usage (from the repo root, via Docker Compose):
 
@@ -11,16 +15,26 @@ Usage (from the repo root, via Docker Compose):
 
 import os
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine
 
-from app.db import bootstrap
 from scripts import seed
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _alembic_config() -> Config:
+    config = Config(os.path.join(_REPO_ROOT, "alembic.ini"))
+    config.set_main_option("script_location", os.path.join(_REPO_ROOT, "migrations"))
+    return config
 
 
 def main() -> None:
+    command.upgrade(_alembic_config(), "head")
+
     engine = create_engine(os.environ["MIGRATOR_DATABASE_URL"])
     try:
-        bootstrap.reset_database(engine)
         seed.run(engine)
     finally:
         engine.dispose()
