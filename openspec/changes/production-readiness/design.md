@@ -477,9 +477,22 @@ Proposal questions 1 and 2 were answered by the owner and are recorded as bindin
 |---|---|---|---|
 | 3 | Role provisioning off Docker | **Decided here** (D21) | Runbook + credential-free `01-roles.sh` in slice 2. Deferring it entirely means shipping a backend that cannot be stood up on a managed Postgres. Low risk, ~15 lines. |
 | 4 | CORS when the origin list is unset; does the public route need its own policy | **Decided here** (D22) | Required setting where the empty value is a legal explicit answer; `*` rejected at boot; one policy shared with `/public`. Reversible. |
-| 5 | Rate-limit budget and key; proxy trust | **NEEDS OWNER SIGN-OFF** | CRITICAL domain with real lockout risk. Recommendation: login 10/15min, register 5/hour, **address-only** key, `TRUSTED_PROXY_COUNT` required with no default. The *shape* (outcome-blind, address-only) is the part that must not be traded away; the *numbers* are cheap to change. |
+| 5 | Rate-limit budget and key; proxy trust | **APPROVED by the owner, 2026-09-04** | CRITICAL domain with real lockout risk. Recommendation: login 10/15min, register 5/hour, **address-only** key, `TRUSTED_PROXY_COUNT` required with no default. The *shape* (outcome-blind, address-only) is the part that must not be traded away; the *numbers* are cheap to change. |
 | 6 | Production worker count | **Decided here** (D19, D24) | `--workers 1`, written into the image `CMD`. It is a limiter-correctness constraint, not a performance choice. Revisit only together with a shared counter store. |
 | 7 | Log level and retention; is stdout-only JSON right | **Level decided here** (D23); **retention deferred** | `INFO` default, `sqlalchemy.engine` pinned to `WARNING` independently. stdout-only JSON is correct for a containerised service. Retention belongs to the deployment change — with one note that must not be lost: Docker's default `json-file` driver grows **unbounded** and needs `max-size`/`max-file`, or the host fills up. |
+
+**Owner decision, 2026-09-04 — question 5 approved as recommended.**
+
+Login 10 attempts / 15 minutes, registration 5 / hour, key on address only,
+`TRUSTED_PROXY_COUNT` required with no default. Approved as a starting
+point, explicitly revisable.
+
+The distinction this design drew is the one that survives: the *shape* is
+not negotiable and the *numbers* are. Outcome-blind counting and an
+address-only key are what keep the `429` from telling an attacker which
+accounts exist — trading either away reopens the enumeration oracle D10
+closed by making every failed login return one identical `401`. Raising or
+lowering the thresholds later costs a config change and breaks nothing.
 
 **Also requiring sign-off before implementation:**
 
