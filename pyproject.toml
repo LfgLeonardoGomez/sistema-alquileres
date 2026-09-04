@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.4",
     "pwdlib[argon2]>=0.2",
     "pyjwt>=2.9",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
