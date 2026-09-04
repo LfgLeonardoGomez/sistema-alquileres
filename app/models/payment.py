@@ -12,8 +12,7 @@ from app.services.dates import today_ar
 
 class Payment(Base):
     """A payment (or refund) recorded against a reservation. TENANT-SCOPED
-    table -- RLS is applied via `app/db/bootstrap.py::TENANT_SCOPED_TABLES`
-    (design D5).
+    table -- RLS is applied by `migrations/versions/0001_baseline.py` (design D5, D13).
 
     Composite FK to `reservations` (`(tenant_id, reservation_id)
     REFERENCES reservations (tenant_id, id)`), the same pattern

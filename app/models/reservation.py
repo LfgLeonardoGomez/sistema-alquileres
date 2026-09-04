@@ -24,8 +24,8 @@ RESERVATION_STATUSES = ("reserved", "cancelled")
 
 
 class Reservation(Base):
-    """A booking for a property. TENANT-SCOPED table -- RLS is applied via
-    `app/db/bootstrap.py::TENANT_SCOPED_TABLES` (design D5).
+    """A booking for a property. TENANT-SCOPED table -- RLS is applied by
+    `migrations/versions/0001_baseline.py` (design D5, D13).
 
     Composite FKs to `properties`/`clients` (`(tenant_id, x_id) REFERENCES
     x (tenant_id, id)`), not simple `FK(x_id)` -- this is what makes a
@@ -42,8 +42,8 @@ class Reservation(Base):
     what make `check_out == next check_in` legal (adjacency). The
     `status <> 'cancelled'` predicate (rather than `status = 'reserved'`)
     is fail-closed: a future third status is included in overlap checking
-    by default. Requires `btree_gist` (created by
-    `app/db/bootstrap.py::create_extensions`) for the `uuid WITH =`
+    by default. Requires `btree_gist` (created by the
+    baseline migration) for the `uuid WITH =`
     operator class inside a gist index. Scoping on `property_id` alone is
     sufficient -- it is a globally unique UUID, so `tenant_id` in the
     exclusion expression would be redundant.

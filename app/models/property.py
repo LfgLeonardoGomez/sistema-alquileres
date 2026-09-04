@@ -9,8 +9,8 @@ from app.db.base import Base
 
 
 class Property(Base):
-    """A rental cabin. TENANT-SCOPED table -- RLS is applied via
-    `app/db/bootstrap.py::TENANT_SCOPED_TABLES` (design D5).
+    """A rental cabin. TENANT-SCOPED table -- RLS is applied by
+    `migrations/versions/0001_baseline.py` (design D5, D13).
 
     Soft-deleted via `deleted_at` (design D8) -- never physically removed,
     so historical reservations and payments on a retired property stay

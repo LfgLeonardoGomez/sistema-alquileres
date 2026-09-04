@@ -9,8 +9,8 @@ from app.db.base import Base
 
 
 class Client(Base):
-    """A guest of a tenant. TENANT-SCOPED table -- RLS is applied via
-    `app/db/bootstrap.py::TENANT_SCOPED_TABLES` (design D5).
+    """A guest of a tenant. TENANT-SCOPED table -- RLS is applied by
+    `migrations/versions/0001_baseline.py` (design D5, D13).
 
     `UNIQUE(tenant_id, phone)` is a FULL unique constraint -- it spans both
     active AND soft-deleted rows (design D8). This is deliberate, not an

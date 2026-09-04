@@ -10,7 +10,7 @@ from app.db.base import Base
 
 class User(Base):
     """The single owner user of a tenant. TENANT-SCOPED table -- RLS is
-    applied via `app/db/bootstrap.py::TENANT_SCOPED_TABLES` (design D5).
+    applied by `migrations/versions/0001_baseline.py` (design D5, D13).
 
     Login identifier is `email`, unique PER TENANT (design D10) -- never
     globally unique, so a login lookup never has to read this table before
