@@ -390,3 +390,91 @@ Decisions this proposal cannot make alone.
 
 **Recorded as deferred, not open:** password reset. It needs an email provider
 and is its own change.
+
+---
+
+## Owner decisions after the proposal (2026-09-04)
+
+### Open Question 2 — RESOLVED, and it collapses slice 2
+
+**A cancelled reservation owes nothing. Its balance is 0.**
+
+The owner's words: if the reservation is cancelled the money does not exist,
+the balance returns to zero, and whether a deposit is returned is settled
+personally with the guest. The recorded payments remain visible on the
+reservation — they *are* the record that there is an amount to discuss.
+
+**A cancelled stay is not counted as an "estadía."** The guest never came. It
+still appears in the guest's stay list marked `Cancelada`: a count is a
+summary, a list is a history.
+
+This resolves the question the per-guest aggregate slice was gated on, and it
+resolves it in the direction that removes the slice. Once a cancelled
+reservation reports zero, a guest's outstanding balance is just the sum of
+their reservations' balances, and slice 1's `client_id` filter already puts
+that list in the frontend's hands. **Slice 2 is expected to ship as no code.**
+That was named as a legitimate outcome when it was proposed; it is now the
+likely one.
+
+### New scope item — the cancelled-balance defect
+
+This is not new work invented here; it is a defect the decision above
+exposes. `ReservationRead.balance` is `effective_total - paid_amount` with no
+reference to `status`, so a cancelled reservation of $180.000 carrying a
+$60.000 deposit currently reports **"Le falta pagar $120.000"** — a figure
+nobody owes.
+
+The asymmetry is visible in the same file: `is_completed` *does* consult
+`status` (a cancelled stay is never completed) while `balance` does not. One
+derived field is status-aware and its neighbour is not.
+
+Note the dashboard already agrees with the owner: `collected` excludes
+cancelled reservations' payments. Fixing `balance` makes the two consistent
+rather than introducing a new rule.
+
+No migration. It changes a computed field and its spec, and it needs a test
+that a cancelled reservation reports zero regardless of what was paid.
+
+### New scope item — payment method as a stored enum
+
+The owner wants how a payment arrived recorded rather than typed into free
+text: a new enum column on `payments` (`efectivo`, `transferencia`, `otro`).
+Only the owner knows the method, so it must be stored.
+
+**The payment's *purpose* is not stored.** The first payment on a reservation
+is the "Seña" and the rest are "Pago" — derived and displayed, never a column,
+consistent with D7's standing rule that nothing derivable is persisted. Two
+consequences for whoever implements it:
+
+- **Derive by `paid_on`, not by insertion order.** If the owner records a
+  March payment before January's deposit, "first by `created_at`" names the
+  wrong one as the seña.
+- A refund is neither seña nor pago. The negative sign already distinguishes
+  it, and no enum value should duplicate that.
+
+This carries a migration, so it joins slice 3 rather than opening a fourth —
+one revision covering both new columns, reviewed together.
+
+### Explicitly NOT in scope: cookie-based sessions
+
+Considered and deferred. The frontend keeps its bearer token in
+`localStorage` for now. Front (Vercel) and back (Railway) will sit on
+different registrable domains until a custom domain is bought, and across
+different sites a session cookie is a third-party cookie — already blocked by
+Safari and being phased out by Chrome. It would not work, not merely cost
+more.
+
+The trigger that reopens it is the domain purchase, which the owner is
+holding until the system has been used and found worth keeping. When it
+happens, the cookie migration and password recovery should land together
+rather than touching auth twice.
+
+### Revised slicing
+
+| # | Slice | Change |
+|---|-------|--------|
+| 0 | `client-management` disambiguation | unchanged, spec only |
+| 1 | Reservation list filters | unchanged |
+| 2 | Per-guest aggregates | **expected to be no code**, pending confirmation once slice 1 lands |
+| 3 | Tenant public contact **+ payment method enum** | one migration, two columns |
+| 4 | **Cancelled-reservation balance** | new. No migration; lands independently and can go first if convenient, since the frontend needs it before it can display any guest's balance correctly |
