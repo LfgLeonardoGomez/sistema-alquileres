@@ -480,3 +480,43 @@ block slice 2; (5) blocks slice 1.
    segmented control on screens 03 and 11 fits two, and the palette has three
    pastels. If a third or fourth cabin is plausible, the graceful behaviour
    should be decided now rather than discovered.
+
+---
+
+## Owner decisions after the proposal (2026-09-04)
+
+### Open question 1 — editing a saved reservation: RESOLVED, it is in scope
+
+The handoff draws no affordance for it, and the owner has confirmed the app
+needs one: a view or modal to edit a reservation that already exists. It is
+part of this change, not a later addition.
+
+`ReservationUpdate` bounds the scope on its own — the API accepts only
+`check_in`, `check_out`, `price_per_night` and `price_total`. The cabin and
+the guest cannot be changed, and status changes go through
+`POST /reservations/{id}/cancel`. That is the right boundary: editing here
+means correcting what was written down, not rebuilding the reservation.
+
+Four consequences the design must resolve.
+
+**The calendar must exclude the reservation being edited from its occupied
+display.** Otherwise the owner tries to move a stay by one day, sees those
+nights marked as taken — by her own booking — and cannot edit anything, with
+no explanation of why. The backend has no such problem: an exclusion
+constraint compares distinct rows, so a row never conflicts with itself. This
+is purely an interface concern, and it is the one most likely to be missed
+because it looks correct until someone tries to shift a date.
+
+**Extending the dates rescales a per-night price and leaves a stay-total
+price untouched.** That rule already exists and is tested server-side. The
+edit screen has to make it visible, or the owner adds a night and the total
+either changes or fails to change without her having asked for either.
+
+**Lowering the price below what has already been paid is allowed** and
+produces a negative balance, which reads as "Le tenés que devolver" — a
+normal state, never an error. The edit screen must not guard against it.
+
+**A cancelled reservation should not offer editing.** The API permits it,
+since `PATCH` does not check status, and a cancelled row sits outside the
+`EXCLUDE` predicate so any dates would be accepted. Nothing good comes of
+that; the affordance simply should not appear.
