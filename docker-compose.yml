@@ -5,6 +5,10 @@ services:
       POSTGRES_DB: alquileres
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      # Read by docker/initdb/01-roles.sh at container init only (design
+      # D21) -- never read by application code.
+      ALQUILERES_MIGRATOR_PASSWORD: alquileres_migrator_password
+      ALQUILERES_APP_PASSWORD: alquileres_app_password
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
@@ -22,6 +26,10 @@ services:
       POSTGRES_DB: alquileres_test
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      # Read by docker/initdb/01-roles.sh at container init only (design
+      # D21) -- never read by application code.
+      ALQUILERES_MIGRATOR_PASSWORD: alquileres_migrator_password
+      ALQUILERES_APP_PASSWORD: alquileres_app_password
     volumes:
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     ports:
@@ -33,22 +41,46 @@ services:
       retries: 20
 
   api:
-    build: .
+    build:
+      context: .
+      target: dev
     volumes:
       - .:/app
     environment:
+      # No MIGRATOR_DATABASE_URL here: the API process must never hold
+      # table-owner credentials (design D20). The `migrate` service below
+      # is the only place that variable is ever set.
       DATABASE_URL: postgresql+psycopg://alquileres_app:alquileres_app_password@db:5432/alquileres
-      MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db:5432/alquileres
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env - copy .env.example}
       REGISTRATION_TOKEN: ${REGISTRATION_TOKEN:?set REGISTRATION_TOKEN in .env - copy .env.example}
+      ENVIRONMENT: development
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
 
+  migrate:
+    build:
+      context: .
+      target: dev
+    volumes:
+      - .:/app
+    environment:
+      # The only service that ever holds migrator credentials (design D20).
+      MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db:5432/alquileres
+      ENVIRONMENT: development
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    # Migrate + seed the dev database:
+    #   docker compose run --rm migrate python -m scripts.reset_db
+
   test:
-    build: .
+    build:
+      context: .
+      target: dev
     volumes:
       - .:/app
     environment:
@@ -56,6 +88,7 @@ services:
       MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db-test:5432/alquileres_test
       JWT_SECRET: test-secret-padded-to-32-bytes-min
       REGISTRATION_TOKEN: test-registration-token
+      ENVIRONMENT: test
     depends_on:
       db-test:
         condition: service_healthy

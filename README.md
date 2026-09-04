@@ -22,7 +22,7 @@ Payments, and the Public Calendar + Owner Dashboard covered below. See
 
 ```bash
 docker compose up -d db
-docker compose run --rm api python -m scripts.reset_db
+docker compose run --rm migrate python -m scripts.reset_db
 docker compose up -d api
 curl http://localhost:8000/health
 ```
@@ -36,7 +36,7 @@ development data. Despite its name, it is **not destructive** — it never
 drops a table (see "Migrations" below, design D18):
 
 ```bash
-docker compose run --rm api python -m scripts.reset_db
+docker compose run --rm migrate python -m scripts.reset_db
 ```
 
 Safely re-runnable: `alembic upgrade head` is a no-op once already at
@@ -86,20 +86,23 @@ There is exactly one way this schema comes into existence: Alembic. The
 test suite uses the same mechanism (`tests/conftest.py`), so no test can
 pass against a schema production never runs (design D13).
 
+All three commands below run via the `migrate` service, the only place
+`MIGRATOR_DATABASE_URL` is ever set (design D20) -- not `api`.
+
 ```bash
 # Apply every migration up to the latest (what `scripts/reset_db.py` does)
-docker compose run --rm api alembic upgrade head
+docker compose run --rm migrate
 
 # Roll back to nothing -- an explicit, typed, revision-scoped operator
 # action. There is no other command in this codebase that drops a table.
-docker compose run --rm api alembic downgrade base
+docker compose run --rm migrate alembic downgrade base
 
 # After changing a model in app/models/, generate the next migration.
 # ALWAYS review the generated file by hand before committing it --
 # autogenerate does not detect RLS policies, grants, or EXCLUDE
 # constraints (see migrations/versions/0001_baseline.py, which is
 # entirely hand-written for exactly this reason).
-docker compose run --rm api alembic revision --autogenerate -m "message"
+docker compose run --rm migrate alembic revision --autogenerate -m "message"
 ```
 
 `migrations/versions/0001_baseline.py` reproduces, as literal
@@ -127,8 +130,12 @@ matches head, and there is no pending autogenerate diff).
 ## Database roles
 
 Two PostgreSQL roles exist, created once at container init by
-`docker/initdb/01-roles.sql` (never by application code — roles are
-cluster-level infrastructure):
+`docker/initdb/01-roles.sh` (never by application code — roles are
+cluster-level infrastructure). The script reads both passwords from the
+`db`/`db-test` service's environment (no defaults, no credentials
+hardcoded in the file itself) — see "Provisioning a fresh PostgreSQL
+cluster" below for the equivalent statements run by hand on a real
+cluster (design D21).
 
 | Role | Used by | Properties |
 |---|---|---|
@@ -154,6 +161,41 @@ predicate, and the migrator must `set_config('app.tenant_id', ...)` in the
 same transaction before any tenant-scoped write succeeds, exactly like the
 app does.
 
+### Provisioning a fresh PostgreSQL cluster
+
+`docker/initdb/01-roles.sh` only ever runs at Docker container init on the
+`db`/`db-test` services — it never runs against a managed Postgres
+cluster (RDS, Cloud SQL, a bare `postgres` install, etc.). `CREATE ROLE`
+is cluster-level and is not re-runnable by a migration, and the migration
+itself runs *as* `alquileres_migrator`, which cannot create itself
+(design D5, D21). Standing up this schema on a real cluster is therefore
+a **manual, one-time runbook**, run once as a superuser, with passwords
+supplied by the operator (never committed):
+
+```sql
+CREATE ROLE alquileres_migrator WITH LOGIN PASSWORD '<operator-supplied>';
+
+CREATE ROLE alquileres_app WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '<operator-supplied>';
+
+GRANT CREATE, USAGE ON SCHEMA public TO alquileres_migrator;
+GRANT USAGE ON SCHEMA public TO alquileres_app;
+
+GRANT CREATE ON DATABASE <database_name> TO alquileres_migrator;
+```
+
+**`NOSUPERUSER NOBYPASSRLS` on `alquileres_app` is the line that must not
+be "simplified" away.** It is the line someone reaches for when a
+permission error appears and RLS looks like the obstacle — but RLS is
+bypassed by superusers, `BYPASSRLS` roles, and the table owner (design
+D5). Dropping either keyword makes the app role bypass tenant isolation
+entirely, and every isolation test in this repository would keep passing,
+because they all run *as* the app role too. If a grant is missing, add
+the grant; do not widen the role.
+
+After both roles exist, point `MIGRATOR_DATABASE_URL` at the cluster and
+run `alembic upgrade head` (see "Migrations" above) — the same command
+the `migrate` service runs in Compose.
+
 ## Configuration
 
 Environment variables, set via `pydantic-settings` (`app/config.py`):
@@ -163,10 +205,26 @@ Environment variables, set via `pydantic-settings` (`app/config.py`):
 | `DATABASE_URL` | Yes | App-role (`alquileres_app`) connection string |
 | `JWT_SECRET` | Yes, **no default**, min 32 bytes | Signs and verifies access tokens (HS256, 8h expiry). The app refuses to boot without it — a default secret in source is how a staging key reaches production. |
 | `REGISTRATION_TOKEN` | Yes, **no default** | Shared secret required in the `X-Registration-Token` header on `POST /auth/register` — gates self-registration so anonymous tenant creation is not open on a public host. |
+| `ENVIRONMENT` | Yes, **no default** | Same no-default rule as the two secrets above, and for the same reason (design D20): a default of `development` would make the check below fail open on a forgotten variable. Set to `production` to enable it. |
 
-`MIGRATOR_DATABASE_URL` is read directly by `migrations/env.py`,
-`scripts/reset_db.py`, and `scripts/seed.py` (not part of the app's
-`Settings`) — it is never used by the running API process.
+**When `ENVIRONMENT=production`, the app refuses to boot if
+`MIGRATOR_DATABASE_URL` is present anywhere in the process environment**
+— `Settings` has no field for it, so this reads the raw environment
+directly, and it is enforced even though the variable is never part of
+the app's own config (design D20). The API process must never hold
+table-owner credentials.
+
+`MIGRATOR_DATABASE_URL` itself is read directly by `migrations/env.py`,
+`scripts/reset_db.py`, and `scripts/seed.py` — never part of the app's
+`Settings`, and never set on the `api` service. It is set **only** on the
+`migrate` Compose service (`command: alembic upgrade head` by default,
+overridable to `python -m scripts.reset_db` for migrate + seed in the dev
+loop):
+
+```bash
+docker compose run --rm migrate
+docker compose run --rm migrate python -m scripts.reset_db
+```
 
 ### Secrets
 
@@ -185,6 +243,47 @@ is committed and must never hold a real value.
 The `test` service is the deliberate exception: it keeps literal throwaway
 values in `docker-compose.yml`. Test secrets are not secrets, and requiring a
 populated `.env` just to run `pytest` buys nothing.
+
+## Production image
+
+`Dockerfile` is multi-stage with two targets (design D19):
+
+- `dev` — what `docker compose build` produces for `api`, `test`, and
+  `migrate` today. Keeps the `[dev]` extras (`pytest`) and `tests/`,
+  `scripts/` present; bind-mount-friendly.
+- `prod` — the deployment target. Built from a `builder` stage that
+  installs the project **without** `[dev]` extras, then copies only
+  `app/`, `migrations/`, and `alembic.ini` into a clean runtime stage —
+  an explicit `COPY` allowlist, not `.dockerignore` alone. Runs as a
+  fixed-UID non-root user (`appuser`, UID 10001). `CMD` invokes `uvicorn`
+  explicitly with `--workers 1`: this is a rate-limiter **correctness**
+  constraint (design D24), not a performance default — the auth rate
+  limiter's counters are in-process and per-worker, so a second worker
+  silently multiplies every budget.
+
+Build and inspect it manually:
+
+```bash
+docker build --target prod -t cabin-booking-api:prod .
+
+# No project test files, no scripts/, no docker/, no .env* -- only what
+# the allowlist above copied:
+docker run --rm cabin-booking-api:prod ls -la /app
+
+# No dev-only dependencies (pytest) installed:
+docker run --rm cabin-booking-api:prod sh -c "pip list | grep -i pytest || echo 'pytest NOT installed'"
+
+# Non-root:
+docker run --rm cabin-booking-api:prod id
+```
+
+**This is a manual runbook step, and that is a stated gap, not an
+oversight.** Asserting these properties automatically requires a CI build
+step this change does not have (design D19); automating this check
+belongs to that future change. Saying that plainly is better than
+implying the packaging claims above are covered by the test suite —
+they are not; the test suite runs entirely inside the `dev`/`test`
+images and never builds `prod`.
 
 ## Authentication
 
@@ -396,7 +495,7 @@ app/
     public.py        # column-projected public availability query (D9)
     dashboard.py     # collected + occupied/available nights aggregation
 docker/
-  initdb/01-roles.sql  # Cluster-level role creation (D5)
+  initdb/01-roles.sh   # Cluster-level role creation, passwords from env (D5, D21)
 migrations/
   env.py             # Reads MIGRATOR_DATABASE_URL; target_metadata = Base.metadata
   script.py.mako     # Revision template
@@ -408,7 +507,7 @@ scripts/
 tests/
   conftest.py                       # Migrates (downgrade base -> upgrade head) + seeds the test DB
   test_health.py
-  test_config.py                    # Settings refuse to boot without secrets or on a short JWT_SECRET
+  test_config.py                    # Settings refuse to boot without secrets/ENVIRONMENT, or in prod with MIGRATOR_DATABASE_URL set (D20)
   test_seed.py
   test_rls_structural.py            # pg_catalog: every tenant_id table has RLS enabled AND forced
   test_schema_is_migrated.py        # alembic_version == head; no pending autogenerate diff (D17)

@@ -13,3 +13,18 @@ openspec/
 .claude/
 .atl/
 README.md
+docker/
+.env
+.env.*
+
+# NOTE: tests/ and scripts/ are deliberately NOT listed here even though
+# design D19 says the production runtime must never contain them. The
+# `dev` build target and the `builder` stage (Dockerfile) explicitly
+# `COPY tests ./tests` and `COPY scripts ./scripts` -- .dockerignore
+# filters the build context once, for every stage, so ignoring these
+# directories here would break those COPYs (verified: Docker refuses to
+# COPY a dockerignored path even when the instruction names it directly).
+# The `prod` stage's COPY allowlist (app/, migrations/, alembic.ini only)
+# is therefore the actual, sole mechanism that keeps tests/ and scripts/
+# out of the production image -- this file is a blocklist for paths no
+# stage ever needs, not a substitute for that allowlist.
