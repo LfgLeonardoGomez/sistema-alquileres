@@ -74,7 +74,9 @@ implementing the change itself is a separate, still-open gate per
 
 **Commit 5 (D-step 5):**
 
-- [ ] 1.10 `tests/conftest.py`: switch the autouse session fixture's three lines to `alembic downgrade base` → `alembic upgrade head` → `seed_script.run(engine)`, invoked in-process via `alembic.config.Config` + `alembic.command` (not `subprocess`, so a failure raises with a real traceback). No other fixture in the file changes. Run `docker compose run --rm test` — full suite MUST be green, and **`tests/test_rls_structural.py` MUST pass with zero lines changed** — this is D17's first standing check: it now audits the migrated schema instead of the bootstrap-built one, for free.
+- [x] 1.10 `tests/conftest.py`: switch the autouse session fixture's three lines to `alembic downgrade base` → `alembic upgrade head` → `seed_script.run(engine)`, invoked in-process via `alembic.config.Config` + `alembic.command` (not `subprocess`, so a failure raises with a real traceback). No other fixture in the file changes. Run `docker compose run --rm test` — full suite MUST be green, and **`tests/test_rls_structural.py` MUST pass with zero lines changed** — this is D17's first standing check: it now audits the migrated schema instead of the bootstrap-built one, for free.
+
+  **Observed:** 131 passed, run twice in a row against the same `db-test` container (proving the downgrade→upgrade→seed cycle is repeatable, not just correct once). `git diff --stat tests/test_rls_structural.py` is empty; both its tests pass against the Alembic-migrated schema.
 
 **Commit 6 (D-step 6 — D17's remaining two standing checks):**
 

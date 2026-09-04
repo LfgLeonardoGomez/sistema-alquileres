@@ -1,10 +1,17 @@
 """Shared test fixtures.
 
-The autouse session fixture resets the test database from scratch (drop,
-recreate, seed) exactly once per test run, using the alquileres_migrator
-role. Individual tests then read through the app-role engine, matching how
-the real API connects (see design D5's structural note: tests that connect
-as the migrator prove nothing about isolation).
+The autouse session fixture resets the test database from scratch
+(migrate down to nothing, migrate back up to head, seed) exactly once per
+test run, using the alquileres_migrator role. Individual tests then read
+through the app-role engine, matching how the real API connects (see
+design D5's structural note: tests that connect as the migrator prove
+nothing about isolation).
+
+The schema is built through Alembic -- the single construction mechanism
+also used at deployment (design D13/D15). Invoked programmatically via
+`alembic.config.Config` + `alembic.command`, not `subprocess`, so a
+migration failure raises here with a real traceback instead of surfacing
+as an opaque non-zero exit code.
 """
 
 import os
@@ -12,22 +19,41 @@ import uuid
 from dataclasses import dataclass
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
 
-from app.db import bootstrap
+# noqa: F401 -- import kept for its side effect: it registers every model
+# on Base.metadata, which migrations/env.py's target_metadata and
+# tests/test_schema_is_migrated.py's compare_metadata() check both depend
+# on. app/db/bootstrap.py itself is no longer called below. Removed, along
+# with this import, in the same commit that deletes bootstrap.py and moves
+# the model registration into app/models/__init__.py (design D13).
+from app.db import bootstrap  # noqa: F401
 from app.main import app
 from app.security import create_access_token, decode_access_token, hash_password
 from scripts import seed as seed_script
 
 _client = TestClient(app)
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _alembic_config() -> Config:
+    config = Config(os.path.join(_REPO_ROOT, "alembic.ini"))
+    config.set_main_option("script_location", os.path.join(_REPO_ROOT, "migrations"))
+    return config
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _reset_and_seed_test_database() -> None:
+    config = _alembic_config()
+    command.downgrade(config, "base")
+    command.upgrade(config, "head")
+
     engine = create_engine(os.environ["MIGRATOR_DATABASE_URL"])
     try:
-        bootstrap.reset_database(engine)
         seed_script.run(engine)
     finally:
         engine.dispose()
