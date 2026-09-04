@@ -40,8 +40,8 @@ implementing the change itself is a separate, still-open gate per
 
 **Commit 1 (D-step 1 — nothing runs it yet):**
 
-- [ ] 1.3 `pyproject.toml`: add `alembic` to `[project.dependencies]` (runtime, not `[dev]` — the production image runs `alembic upgrade head`, per D19).
-- [ ] 1.4 `alembic.ini`, `migrations/env.py`, `migrations/script.py.mako`: create the Alembic scaffold. `alembic.ini` sets `script_location = migrations`. `env.py` reads `MIGRATOR_DATABASE_URL` and sets `target_metadata = Base.metadata` — `env.py` is explicitly allowed to import `Base.metadata` (D14: it tracks HEAD, it is not a snapshot; only revision files are self-contained). `app/db/bootstrap.py` still exists and is still the only active schema-construction path; nothing here runs yet.
+- [x] 1.3 `pyproject.toml`: add `alembic` to `[project.dependencies]` (runtime, not `[dev]` — the production image runs `alembic upgrade head`, per D19).
+- [x] 1.4 `alembic.ini`, `migrations/env.py`, `migrations/script.py.mako`: create the Alembic scaffold. `alembic.ini` sets `script_location = migrations`. `env.py` reads `MIGRATOR_DATABASE_URL` and sets `target_metadata = Base.metadata` — `env.py` is explicitly allowed to import `Base.metadata` (D14: it tracks HEAD, it is not a snapshot; only revision files are self-contained). `app/db/bootstrap.py` still exists and is still the only active schema-construction path; nothing here runs yet.
 
 **Commit 2 (D-step 2 — still nothing uses it):**
 
