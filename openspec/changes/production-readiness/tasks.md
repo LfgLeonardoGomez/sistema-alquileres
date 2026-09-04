@@ -56,8 +56,21 @@ implementing the change itself is a separate, still-open gate per
 
 **Commit 4 (D-step 4 — prove the net by breaking it):**
 
-- [ ] 1.8 [RED] Temporarily delete one `CREATE POLICY tenant_isolation` statement from `0001_baseline.py` (e.g. the one on `payments`). Re-run `docker compose run --rm parity`. Confirm it fails and record the observed diff output (which table/policy it reports missing) in this task's notes — the design requires this recorded as an observation, not an intention.
-- [ ] 1.9 [GREEN] Restore the deleted policy statement exactly as it was. Re-run `docker compose run --rm parity`. Confirm it reports zero difference again. Commit 1.8+1.9 together as the "break and restore" demonstration.
+- [x] 1.8 [RED] Temporarily delete one `CREATE POLICY tenant_isolation` statement from `0001_baseline.py` (e.g. the one on `payments`). Re-run `docker compose run --rm parity`. Confirm it fails and record the observed diff output (which table/policy it reports missing) in this task's notes — the design requires this recorded as an observation, not an intention.
+
+  **Observed output** (payments' `tenant_isolation` policy omitted from `upgrade()`, everything else unchanged):
+  ```
+  Schema parity: MISMATCH
+
+  [policies]
+    Only in bootstrap-built schema:
+      ('payments', 'tenant_isolation', ('alquileres_app', 'alquileres_migrator'), 'ALL', "(tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)", "(tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)")
+  ```
+  Exit code non-zero. The `policies` category correctly identified `payments` as the table missing its policy.
+
+- [x] 1.9 [GREEN] Restore the deleted policy statement exactly as it was. Re-run `docker compose run --rm parity`. Confirm it reports zero difference again. Commit 1.8+1.9 together as the "break and restore" demonstration.
+
+  **Observed:** `Schema parity: OK -- bootstrap-built and Alembic-built schemas match.` `git diff` against `0001_baseline.py` after restoring is empty.
 
 **Commit 5 (D-step 5):**
 
