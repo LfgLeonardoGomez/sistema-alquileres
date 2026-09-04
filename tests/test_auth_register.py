@@ -83,3 +83,36 @@ def test_register_with_valid_token_creates_tenant_and_owner(
         ).one()
     assert user_row.tenant_id == tenant_id
     assert user_row.email == "owner@example.com"
+
+
+def test_registering_a_duplicate_tenant_slug_is_rejected() -> None:
+    """tenant-management spec, "Slug uniqueness".
+
+    The slug is the public identifier in `/public/{tenant_slug}/availability`,
+    so two tenants sharing one would make that endpoint ambiguous about whose
+    calendar it is serving. No handler special-cases this: the UNIQUE
+    constraint raises, and the generic IntegrityError handler in
+    `app/main.py` maps SQLSTATE 23505 to a 409. This test exists because that
+    path is entirely generic -- nothing in the register handler mentions
+    slugs, so nothing would obviously break if the mapping were removed.
+    """
+    slug = _unique_slug()
+    payload = {
+        "tenant_slug": slug,
+        "name": "First Owner",
+        "email": "first@example.com",
+        "password": "a-strong-password",
+    }
+
+    first = client.post(
+        "/auth/register", headers={"X-Registration-Token": VALID_TOKEN}, json=payload
+    )
+    assert first.status_code == 201, first.text
+
+    duplicate = client.post(
+        "/auth/register",
+        headers={"X-Registration-Token": VALID_TOKEN},
+        json={**payload, "email": "second@example.com"},
+    )
+
+    assert duplicate.status_code == 409, duplicate.text

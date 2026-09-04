@@ -142,3 +142,42 @@ def test_a_refund_increases_balance_back(
     response = client.get(f"/reservations/{reservation['id']}", headers=registered_owner.headers)
     assert response.status_code == 200
     assert Decimal(str(response.json()["balance"])) == Decimal("5000.00")
+
+
+def test_price_can_be_edited_below_the_amount_already_paid(
+    registered_owner: RegisteredOwner,
+) -> None:
+    """reservation-booking spec, "Editing price below amount already paid is
+    allowed".
+
+    The owner is the only user of this system and is reconciling reality, not
+    being policed by it. A guest may genuinely have overpaid, or the owner may
+    have entered the wrong figure and be correcting it downward after a deposit
+    already landed. Blocking the edit would leave the wrong number stored
+    forever with no way to fix it.
+
+    The overpayment surfaces as a NEGATIVE balance rather than being clamped at
+    zero -- that is the signal the owner owes money back, and hiding it would
+    lose real information.
+    """
+    reservation = _create_reservation(registered_owner, "1000.00")
+    reservation_id = reservation["id"]
+
+    payment = client.post(
+        f"/reservations/{reservation_id}/payments",
+        headers=registered_owner.headers,
+        json={"amount": "800.00"},
+    )
+    assert payment.status_code == 201, payment.text
+
+    lowered = client.patch(
+        f"/reservations/{reservation_id}",
+        headers=registered_owner.headers,
+        json={"price_total": "500.00"},
+    )
+
+    assert lowered.status_code == 200, lowered.text
+    body = lowered.json()
+    assert Decimal(body["effective_total"]) == Decimal("500.00")
+    assert Decimal(body["paid_amount"]) == Decimal("800.00")
+    assert Decimal(body["balance"]) == Decimal("-300.00")

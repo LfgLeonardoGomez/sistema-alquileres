@@ -330,71 +330,84 @@ response.
 
 ```
 app/
-  main.py          # FastAPI app, GET /health, registers routers + IntegrityError handler
-  config.py        # pydantic-settings; secrets have no defaults
-  security.py      # Argon2id hashing, JWT issuance/decoding (design D10)
-  errors.py        # Central HTTP error mapping: auth (D10) + SQLSTATE dispatch (D11)
+  main.py            # FastAPI app, GET /health, registers routers + IntegrityError handler
+  config.py          # pydantic-settings; secrets have no defaults, JWT_SECRET min 32 bytes
+  security.py        # Argon2id hashing, JWT issuance/decoding (design D10)
+  errors.py          # Central HTTP error mapping: auth (D10) + SQLSTATE dispatch (D11)
   db/
-    base.py         # SQLAlchemy 2.0 declarative Base
-    session.py      # Engine + SessionLocal (app role) + tenant_scoped_session (D4)
+    base.py          # SQLAlchemy 2.0 declarative Base
+    session.py       # Engine + SessionLocal (app role) + tenant_scoped_session (D4)
     bootstrap.py     # THE authoritative schema DDL: extension, tables, RLS, grants
   models/
-    tenant.py        # Tenant ORM model (global, no RLS)
-    user.py           # User ORM model (tenant-scoped, RLS applied)
-    property.py        # Property ORM model (tenant-scoped, soft delete)
-    client.py           # Client ORM model (tenant-scoped, soft delete, UNIQUE(tenant_id, phone))
+    tenant.py        # Tenant (global, deliberately no RLS)
+    user.py          # User (tenant-scoped, UNIQUE(tenant_id, email))
+    property.py      # Property (tenant-scoped, soft delete)
+    client.py        # Client (tenant-scoped, soft delete, full UNIQUE(tenant_id, phone))
+    reservation.py   # Reservation (composite FKs, EXCLUDE non-overlap, paid_amount property)
+    payment.py       # Payment (signed amount, paid_on defaults in Python, never in the DB)
   schemas/
-    auth.py           # RegisterRequest, LoginRequest, TokenResponse, MeResponse
-    property.py         # PropertyCreate/Update/Read (is_active computed_field)
-    client.py            # ClientCreate/Update/Read (is_active computed_field)
-    public.py             # PublicAvailability/OccupiedRange (D9, no shared base class)
-    dashboard.py            # DashboardSummary/PropertyOccupancyRead
+    auth.py          # RegisterRequest, LoginRequest, TokenResponse, MeResponse
+    property.py      # PropertyCreate/Update/Read (is_active computed_field)
+    client.py        # ClientCreate/Update/Read (is_active computed_field)
+    reservation.py   # ReservationCreate/Update/Read (effective_total, is_completed, balance)
+    payment.py       # PaymentCreate/Read (signed Decimal, free-text note)
+    public.py        # PublicAvailability/OccupiedRange (D9, no shared base class)
+    dashboard.py     # DashboardSummary/PropertyOccupancyRead
   api/
-    deps.py           # PrincipalDep, TenantSessionDep, PublicSessionDep (D9)
+    deps.py          # PrincipalDep, TenantSessionDep, PublicSessionDep (D9)
     routers/
-      auth.py          # /auth/register, /auth/login, /me
-      properties.py     # /properties CRUD
-      clients.py          # /clients CRUD (POST is find-or-create-or-reactivate)
-      public.py             # GET /public/{tenant_slug}/availability (no auth)
-      dashboard.py            # GET /dashboard/summary
+      auth.py        # /auth/register, /auth/login, /me
+      properties.py  # /properties CRUD
+      clients.py     # /clients CRUD (POST is find-or-create-or-reactivate)
+      reservations.py# /reservations CRUD + /reservations/{id}/cancel
+      payments.py    # /reservations/{id}/payments
+      public.py      # GET /public/{tenant_slug}/availability (no auth)
+      dashboard.py   # GET /dashboard/summary
   services/
-    clients.py         # upsert_or_reactivate_client (design D8)
-    dates.py             # today_ar, month_window, week_window (pure, no DB)
-    public.py              # column-projected public availability query (D9)
-    dashboard.py             # collected + occupied/available nights aggregation
+    clients.py       # upsert_or_reactivate_client (design D8)
+    reservations.py  # create_reservation with explicit flush; effective_total (D6/D7)
+    dates.py         # today_ar, month_window, week_window (pure, no DB)
+    public.py        # column-projected public availability query (D9)
+    dashboard.py     # collected + occupied/available nights aggregation
 docker/
-  initdb/01-roles.sql   # Cluster-level role creation (D5)
+  initdb/01-roles.sql  # Cluster-level role creation (D5)
 scripts/
-  reset_db.py      # The one command: reset + seed
-  seed.py          # Development seed data (3 tenants)
+  reset_db.py        # The one command: reset + seed
+  seed.py            # Development seed data (3 tenants)
 tests/
-  conftest.py             # Resets + seeds the test DB; seed_three_tenants + registered_owner fixtures
+  conftest.py                       # Resets + seeds the test DB; seed_three_tenants, registered_owner
   test_health.py
-  test_config.py
+  test_config.py                    # Settings refuse to boot without secrets or on a short JWT_SECRET
   test_bootstrap.py
   test_seed.py
-  test_rls_structural.py    # pg_catalog introspection: every tenant_id table has RLS
-  test_tenant_session.py    # tenant_scoped_session isolation, direct
-  test_security.py          # password hashing + JWT round-trip
-  test_auth_register.py
-  test_auth_login.py
+  test_rls_structural.py            # pg_catalog: every tenant_id table has RLS enabled AND forced
+  test_schema_no_derived_columns.py # no total/completed/balance columns; paid_on has no DB default
+  test_tenant_session.py            # tenant_scoped_session isolation, direct
+  test_security.py                  # password hashing + JWT round-trip
+  test_auth_register.py             # token gate, one-transaction creation, duplicate slug -> 409
+  test_auth_login.py                # one generic 401 for every failure mode
   test_me.py
-  test_isolation_auth.py    # 3-tenant cross-isolation for GET /me
-  test_isolation_login.py   # same email, independent tenants, no collision
-  test_properties.py               # property CRUD, soft delete, include_inactive
-  test_clients.py                   # client CRUD, find-or-create-or-reactivate, 23505 backstop
-  test_isolation_properties_clients.py  # 3-tenant cross-isolation, one test per endpoint x resource
-  test_client_reactivation.py           # client id stability across delete/reactivate cycles
-  test_public_contract.py               # D9 leak test (raw body) + occupied-range + cancelled-exclusion
-  test_public_inactive_property.py      # inactive property absent from public, visible authenticated
-  test_date_windows.py                  # month_window/week_window unit tests, no DB
-  test_dashboard_collected.py           # cash-basis bucketing, refunds, active+inactive properties
-  test_dashboard_availability.py        # cancelled exclusion, inactive denominator, Dec/Jan straddle
-  test_isolation_dashboard.py           # 3-tenant cross-isolation for GET /dashboard/summary
+  test_properties.py                # CRUD, soft delete, include_inactive
+  test_clients.py                   # CRUD, find-or-create-or-reactivate, 23505 backstop on PATCH
+  test_client_reactivation.py       # id stability, and reservations stay attached across reactivation
+  test_reservation_overlap.py       # EXCLUDE rejection, adjacency accepted, cancel-then-rebook
+  test_reservation_concurrency.py   # two real connections race the same nights -> one 201, one 409
+  test_reservation_pricing.py       # per-night XOR stay-total, rescale on date edit
+  test_reservation_dates.py         # 1..60 night bounds; past and in-progress stays accepted
+  test_reservation_status.py        # cancel; is_completed derived from today_ar()
+  test_reservation_balance.py       # balance = effective_total - paid_amount, incl. overpayment
+  test_inactive_property_reservation.py
+  test_payments.py                  # partial payments accumulate; amount = 0 rejected
+  test_refunds.py                   # negative amount is a refund; no kind column exists
+  test_public_contract.py           # D9 leak test (raw body), cancelled exclusion, mandatory window
+  test_public_inactive_property.py  # inactive property absent from public, visible authenticated
+  test_date_windows.py              # month_window/week_window unit tests, no DB
+  test_dashboard_collected.py       # cash-basis bucketing, refunds, active+inactive properties
+  test_dashboard_availability.py    # cancelled exclusion, inactive denominator, Dec/Jan straddle
+  test_isolation_auth.py            # 3-tenant cross-isolation, GET /me
+  test_isolation_login.py           # same email, independent tenants, no collision
+  test_isolation_properties_clients.py
+  test_isolation_reservations.py
+  test_isolation_payments.py
+  test_isolation_dashboard.py
 ```
-
-Note: this tree has been kept up to date through Phase 6 only for the
-files each phase's own README task explicitly named; `reservations.py`
-and `payments.py` (models/schemas/routers, Phase 4/5) were never added to
-this listing by those phases' apply passes and remain a pre-existing gap,
-not introduced here.
