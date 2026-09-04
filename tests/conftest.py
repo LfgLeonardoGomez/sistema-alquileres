@@ -14,6 +14,7 @@ migration failure raises here with a real traceback instead of surfacing
 as an opaque non-zero exit code.
 """
 
+import itertools
 import os
 import uuid
 from dataclasses import dataclass
@@ -36,6 +37,26 @@ from scripts import seed as seed_script
 _client = TestClient(app)
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+_ip_sequence = itertools.count(1)
+
+
+def fresh_client_address() -> str:
+    """A syntactically address-shaped, guaranteed-unique-within-this-test-
+    session string (design D24). `TestClient`'s in-process ASGI transport
+    reports the SAME synthetic `request.client.host` for every request in
+    the whole session, and the rate limiter's state is process-lifetime by
+    design (D19: `--workers 1`) -- without varying the address per caller,
+    the suite's own legitimate `POST /auth/register`/`POST /auth/login`
+    traffic (dozens of calls, mostly via `registered_owner` below) would
+    exhaust the real budget and start seeing `429` where it expects `201`/
+    `200`. The `test` Compose service sets `TRUSTED_PROXY_COUNT=1`
+    specifically so tests can simulate distinct callers via
+    `X-Forwarded-For` this way; `api`'s own value is `0` (no reverse
+    proxy in front of it). Not a real routable address -- the limiter
+    treats the header entry as an opaque string."""
+    n = next(_ip_sequence)
+    return f"10.{(n >> 16) & 255}.{(n >> 8) & 255}.{n & 255}"
 
 
 def _alembic_config() -> Config:
@@ -155,7 +176,13 @@ def registered_owner() -> RegisteredOwner:
     slug = f"owner-test-{uuid.uuid4().hex[:8]}"
     response = _client.post(
         "/auth/register",
-        headers={"X-Registration-Token": os.environ["REGISTRATION_TOKEN"]},
+        headers={
+            "X-Registration-Token": os.environ["REGISTRATION_TOKEN"],
+            # See `fresh_client_address`'s docstring -- keeps this fixture's
+            # heavy call volume from exhausting the shared rate-limit
+            # budget (design D24).
+            "X-Forwarded-For": fresh_client_address(),
+        },
         json={
             "tenant_slug": slug,
             "name": "Test Owner",

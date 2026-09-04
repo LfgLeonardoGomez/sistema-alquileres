@@ -6,6 +6,7 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import fresh_client_address
 
 client = TestClient(app)
 
@@ -18,7 +19,9 @@ def _register_and_login() -> dict:
     password = "correct-password-123"
     register_response = client.post(
         "/auth/register",
-        headers={"X-Registration-Token": REGISTRATION_TOKEN},
+        # Design D24: rate-limit-key isolation only -- see
+        # tests/conftest.py::fresh_client_address.
+        headers={"X-Registration-Token": REGISTRATION_TOKEN, "X-Forwarded-For": fresh_client_address()},
         json={"tenant_slug": slug, "name": "Me Test Owner", "email": email, "password": password},
     )
     assert register_response.status_code == 201

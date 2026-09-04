@@ -191,30 +191,91 @@ implementing the change itself is a separate, still-open gate per
 
 ## Phase 5: Auth rate limiting (`authentication`) — CRITICAL, single commit per numbered group below
 
-- [ ] 5.1 **[BLOCKING — HUMAN APPROVAL REQUIRED]** D24 modifies `authentication` behaviour. CRITICAL domain, not approved by any document written so far as a *code change*, independent of the rate-limit numbers themselves. Present the approved shape to a human for explicit sign-off before writing any code in this phase: outcome-blind counting (the limiter never learns whether login/registration succeeded), address-only key (never tenant-slug-inclusive — a slug-keyed limiter is a remote lockout button for any known tenant), `TRUSTED_PROXY_COUNT` required with no default, sliding-window log algorithm, budgets of **login 10/15min, register 5/hour** (owner-approved 2026-09-04 as a revisable starting point). Emphasize: the *shape* (outcome-blind, address-only) is not negotiable — trading it away reopens the enumeration oracle D10 closed; the *numbers* are cheap to change later. **Do not write 5.2 until this is approved.**
+- [x] 5.1 **[BLOCKING — HUMAN APPROVAL REQUIRED]** D24 modifies `authentication` behaviour. CRITICAL domain, not approved by any document written so far as a *code change*, independent of the rate-limit numbers themselves. Present the approved shape to a human for explicit sign-off before writing any code in this phase: outcome-blind counting (the limiter never learns whether login/registration succeeded), address-only key (never tenant-slug-inclusive — a slug-keyed limiter is a remote lockout button for any known tenant), `TRUSTED_PROXY_COUNT` required with no default, sliding-window log algorithm, budgets of **login 10/15min, register 5/hour** (owner-approved 2026-09-04 as a revisable starting point). Emphasize: the *shape* (outcome-blind, address-only) is not negotiable — trading it away reopens the enumeration oracle D10 closed; the *numbers* are cheap to change later. **Do not write 5.2 until this is approved.**
 
-- [ ] 5.2 `app/config.py`: add `trusted_proxy_count: int` (required, no default — same fail-neither-open-nor-closed rule as `environment`) and the rate-limit budget settings (or constants in `app/ratelimit.py` — login 10/15min, register 5/hour).
-- [ ] 5.3 [RED] `tests/test_ratelimit.py` (unit, no DB): `TRUSTED_PROXY_COUNT=0` ignores a forged `X-Forwarded-For` and uses `request.client.host`; `TRUSTED_PROXY_COUNT=1` resolves the correct entry from the **right** of `X-Forwarded-For` (never the leftmost — that value is fully attacker-controlled).
-- [ ] 5.4 [GREEN] `app/ratelimit.py`: create — client-address resolution per `trusted_proxy_count`. Re-run 5.3 → green.
+  **Approved by the owner 2026-09-04.** Binding shape recorded verbatim by the owner in this apply session: outcome-blind counting (the limiter counts attempts, never failures, and never learns whether credentials were correct); address-only key, never tenant-slug-inclusive; `TRUSTED_PROXY_COUNT` required, no default; sliding-window log algorithm; budgets login 10/15min, register 5/hour (separately approved 2026-09-04 as a revisable starting point — the shape is not negotiable, the numbers are cheap to change).
 
-- [ ] 5.5 [RED] `tests/test_ratelimit.py`: sliding-window log — exceeding the budget blocks further attempts; timestamps outside the window expire and free budget; `Retry-After` is computed as the exact seconds until the oldest attempt in the window expires (not a constant).
-- [ ] 5.6 [GREEN] `app/ratelimit.py`: sliding-window log limiter — in-process, counts every request before the handler runs (never the outcome), `threading.Lock`-guarded (sync endpoints run in a threadpool — an unguarded counter is quietly wrong under concurrent load), bounded LRU key set (~10k keys, so an attacker rotating source addresses cannot grow the dict without limit). Re-run 5.5 → green.
+- [x] 5.2 `app/config.py`: add `trusted_proxy_count: int` (required, no default — same fail-neither-open-nor-closed rule as `environment`) and the rate-limit budget settings (or constants in `app/ratelimit.py` — login 10/15min, register 5/hour).
 
-- [ ] 5.7 [RED] `tests/test_auth_ratelimit.py`: exceeding the login attempt budget returns `429` with a `Retry-After` header.
-- [ ] 5.8 [RED] same file: exceeding the registration attempt budget returns `429` with a `Retry-After` header.
-- [ ] 5.9 [GREEN] `app/api/routers/auth.py`: add a route-level rate-limit dependency to `POST /auth/login` and `POST /auth/register` only — a dependency, not middleware, because middleware would have to path-match and drift from the router silently. The dependency runs before the handler has looked anything up, keyed on client address alone via `app/ratelimit.py`. Re-run 5.7/5.8 → green.
+  **Note:** budgets placed as module-level `Final` constants in `app/ratelimit.py` (`LOGIN_LIMIT`/`LOGIN_WINDOW_SECONDS`/`REGISTER_LIMIT`/`REGISTER_WINDOW_SECONDS`), not `Settings` fields — they are not deployment-varying secrets, and keeping them next to the limiter that enforces them avoids a settings field with no env var ever meant to override it. `docker-compose.yml`'s `api`/`test` services and `tests/test_config.py`/`tests/test_cors.py`'s `BASE_ENV` all needed `TRUSTED_PROXY_COUNT` added, matching the established precedent from task 4.1's `CORS_ALLOWED_ORIGINS` addition — confirmed via `docker compose run --rm test pytest tests/test_config.py tests/test_cors.py -v`: 18 passed.
 
-- [ ] 5.10 [RED] `tests/test_auth_ratelimit.py`: **the D10-preservation test.** Two callers each exhaust the login budget — one submitting credentials for an existing account, the other a tenant-slug/email combination that does not exist. Assert the resulting `429` responses are byte-identical: same status, same body, same headers. This is what keeps the limiter from becoming the enumeration oracle D10 closed by making every failed login return one identical `401`.
-- [ ] 5.11 [GREEN] Confirm the rate-limit dependency (5.9) never inspects the handler's outcome — structural, by construction of running before the handler. Re-run 5.10 → green.
+- [x] 5.3 [RED] `tests/test_ratelimit.py` (unit, no DB): `TRUSTED_PROXY_COUNT=0` ignores a forged `X-Forwarded-For` and uses `request.client.host`; `TRUSTED_PROXY_COUNT=1` resolves the correct entry from the **right** of `X-Forwarded-For` (never the leftmost — that value is fully attacker-controlled).
 
-- [ ] 5.12 [TEST] `tests/test_auth_login.py` (existing file): confirm the existing single-generic-401 test still passes unchanged for a caller below the rate-limit budget (D24 scenario: "a caller below the budget still receives the existing generic 401").
+  **Observed RED:** `ModuleNotFoundError: No module named 'app.ratelimit'` — `docker compose run --rm test pytest tests/test_ratelimit.py -v` failed collection with 1 error, as expected before `app/ratelimit.py` existed.
 
-- [ ] 5.13 [RED] `tests/test_cors.py`: a `429` response still carries `Access-Control-Allow-Origin` for a configured origin — pins the CORS-wraps-everything middleware ordering from Phase 4 against the new rate-limit dependency.
-- [ ] 5.14 [GREEN] Confirm CORSMiddleware (registered outside routing in Phase 4) still wraps a `429` raised by the route-level dependency; fix ordering if it does not. Re-run 5.13 → green.
+- [x] 5.4 [GREEN] `app/ratelimit.py`: create — client-address resolution per `trusted_proxy_count`. Re-run 5.3 → green.
 
-- [ ] 5.15 `app/main.py`: log the resolved `TRUSTED_PROXY_COUNT` strategy once at boot (visible in the log rather than discovered during an incident); the first `429` in a process logs a `WARNING` with the resolved key.
+  **Proof for the leftmost-entry claim, not just an assertion:** `resolve_client_address` never indexes from the left. With `trusted_proxy_count=1` and header `"attacker-forged-leftmost, real-client-ip"`, it returns `entries[-1]` = `"real-client-ip"` — the rightmost entry, appended by the one trusted hop from a TCP-level connecting address it could not spoof, never the leftmost value the caller chose to send. A second case with 2 trusted proxies (`"forged, real-client-ip, proxy-1-ip"` → `entries[-2]` = `"real-client-ip"`) triangulates that the rule is "Nth from the right", not "second position" or any other leftmost-adjacent heuristic. `docker compose run --rm test pytest tests/test_ratelimit.py -v`: 9 passed on the first run (both `resolve_client_address` and the `SlidingWindowLimiter` cases written together, since they share one file/one task grouping — see honest precedent at tasks 1.11/4.3 for infrastructure written together rather than strictly interleaved).
 
-- [ ] 5.16 `README.md`: document the rate-limit budgets (login 10/15min, register 5/hour), `TRUSTED_PROXY_COUNT` (required, no default — `0` for direct connections, `n` for `n` trusted proxies), and that the shape (outcome-blind counting, address-only key) is load-bearing while the numbers are explicitly revisable.
+- [x] 5.5 [RED] `tests/test_ratelimit.py`: sliding-window log — exceeding the budget blocks further attempts; timestamps outside the window expire and free budget; `Retry-After` is computed as the exact seconds until the oldest attempt in the window expires (not a constant).
+- [x] 5.6 [GREEN] `app/ratelimit.py`: sliding-window log limiter — in-process, counts every request before the handler runs (never the outcome), `threading.Lock`-guarded (sync endpoints run in a threadpool — an unguarded counter is quietly wrong under concurrent load), bounded LRU key set (~10k keys, so an attacker rotating source addresses cannot grow the dict without limit). Re-run 5.5 → green.
+
+  **Note:** written together with 5.3/5.4 in the same file/commit grouping (see 5.4's note); RED was observed once for the whole module via the `ModuleNotFoundError` in 5.3, then all 9 cases (4 address-resolution + 5 limiter, including a rejected-request-does-not-extend-its-window case and a bounded-LRU-eviction case beyond what 5.5 literally asks for) went green together. `Retry-After` exactness verified with an injectable `now=` parameter (e.g. limit=1/window=60s: admit at t=1000, check at t=1015 → `retry_after_seconds == 45.0`; check again at t=1050 → `10.0`) rather than a real `sleep`, so the test is exact and not flaky.
+
+- [x] 5.7 [RED] `tests/test_auth_ratelimit.py`: exceeding the login attempt budget returns `429` with a `Retry-After` header.
+- [x] 5.8 [RED] same file: exceeding the registration attempt budget returns `429` with a `Retry-After` header.
+
+  **Observed RED (retroactively, honestly recorded):** the route-level dependency (5.9) was wired before this test file was written. To recover genuine RED evidence rather than skip it, `app/api/routers/auth.py`'s rate-limit wiring was temporarily reverted via `git stash push -- app/api/routers/auth.py`, the new test file run, and the wiring restored via `git stash pop`. Result: `3 failed, 1 passed` — both budget-exceeded tests and the D10-preservation test (5.10) failed with `assert 401 == 429` (no limiter gating the route), while the below-budget 401 test (5.12) passed, exactly as expected since it does not depend on the limiter at all.
+
+- [x] 5.9 [GREEN] `app/api/routers/auth.py`: add a route-level rate-limit dependency to `POST /auth/login` and `POST /auth/register` only — a dependency, not middleware, because middleware would have to path-match and drift from the router silently. The dependency runs before the handler has looked anything up, keyed on client address alone via `app/ratelimit.py`. Re-run 5.7/5.8 → green.
+
+  **Observed GREEN:** wiring restored, `docker compose run --rm test pytest tests/test_auth_ratelimit.py -v`: 4 passed.
+
+- [x] 5.10 [RED] `tests/test_auth_ratelimit.py`: **the D10-preservation test.** Two callers each exhaust the login budget — one submitting credentials for an existing account, the other a tenant-slug/email combination that does not exist. Assert the resulting `429` responses are byte-identical: same status, same body, same headers. This is what keeps the limiter from becoming the enumeration oracle D10 closed by making every failed login return one identical `401`.
+
+  **Observed RED:** covered by the same revert-and-restore cycle as 5.7/5.8 above (`assert 401 == 429` — no limiter gating the route). Design constraint honored: `time.monotonic` is frozen for the whole exhaustion sequence (`unittest.mock.patch("app.ratelimit.time.monotonic", ...)`) so both callers' budgets are consumed at the identical simulated instant, and both requests carry the same caller-supplied, regex-valid `X-Request-ID` so correlation does not introduce an incidental difference unrelated to the oracle question.
+
+- [x] 5.11 [GREEN] Confirm the rate-limit dependency (5.9) never inspects the handler's outcome — structural, by construction of running before the handler. Re-run 5.10 → green.
+
+  **Observed GREEN, verbatim (via a standalone reproduction script, `scripts/_tmp_verify_oracle.py`, run once and deleted):**
+  ```
+  === REAL ACCOUNT 429 ===
+  HTTP/1.1 429 Too Many Requests
+  retry-after: 900
+  content-length: 48
+  content-type: application/json
+  x-request-id: oracle-verify-fixed-id
+
+  {"detail":"Too many attempts. Try again later."}
+
+  === NONEXISTENT ACCOUNT 429 ===
+  HTTP/1.1 429 Too Many Requests
+  retry-after: 900
+  content-length: 48
+  content-type: application/json
+  x-request-id: oracle-verify-fixed-id
+
+  {"detail":"Too many attempts. Try again later."}
+
+  BYTE-IDENTICAL: True
+  ```
+
+- [x] 5.12 [TEST] `tests/test_auth_login.py` (existing file): confirm the existing single-generic-401 test still passes unchanged for a caller below the rate-limit budget (D24 scenario: "a caller below the budget still receives the existing generic 401").
+
+  **Deviation, recorded honestly:** the test *assertions* are unchanged, but every call in this file now carries an `X-Forwarded-For` header via a new `fresh_client_address()` helper (`tests/conftest.py`), for a reason independent of what this file tests — see the note on task 5.2's sibling infrastructure fix below (`tests/__init__.py`). Without a fresh per-test-function address, this file's calls would share one rate-limit bucket with every other test in the suite that also calls `/auth/login`/`/auth/register` without going through `registered_owner`, which is exactly the failure the fix below addresses. `docker compose run --rm test pytest tests/test_auth_login.py -v`: both tests pass, same assertions as before this phase.
+
+  **A real, suite-wide bug found and fixed along the way, unrelated to this task's own scope but load-bearing for the whole suite passing:** `tests/conftest.py`'s `registered_owner` fixture was given its own `fresh_client_address()` call so its heavy call volume (used by 29+ business-logic test files) would not exhaust the 5-per-hour register budget. This alone was not sufficient — the full suite still failed with `tests/test_clients.py::test_create_client_returns_201_and_active` erroring with `KeyError: 'access_token'` on a `registered_owner` setup that had received a `429` body instead of a token. Root cause, confirmed empirically rather than assumed: `tests/` had no `__init__.py`, so pytest's own conftest-loading mechanism imported `tests/conftest.py` as a top-level module named `conftest` (inserting `tests/` onto `sys.path`), while every test file's explicit `from tests.conftest import fresh_client_address` imported a **second, independent** module object named `tests.conftest` — proven directly: `importlib.import_module('conftest') is importlib.import_module('tests.conftest')` → `False`, and both modules' `fresh_client_address()` produced the IDENTICAL sequence `10.0.0.1`, `10.0.0.2`, ... (each running its own `itertools.count(1)` from scratch). This meant the `registered_owner` fixture's Nth address and some other file's Nth address were the SAME string, silently pooling their register-attempt counts into one shared bucket across files that believed themselves isolated. Fixed by adding `tests/__init__.py` (a real package), which makes both import paths resolve to the ONE module object — verified directly (`importlib.import_module('conftest')` now raises `ModuleNotFoundError`, confirming pytest will resolve it as `tests.conftest` instead, the same object every other file already imports). This was diagnosed instead of worked around: an autouse fixture that resets the limiter's in-memory state between tests was considered and rejected, because it would require a test-only reset hook in production code (`app/ratelimit.py`) purely to paper over a test-harness import bug, and because it would weaken confidence in the limiter's actual process-lifetime behavior in the one environment (the full suite) where it runs continuously the longest. Full suite after the fix: `docker compose run --rm test`: **166 passed**.
+
+- [x] 5.13 [RED] `tests/test_cors.py`: a `429` response still carries `Access-Control-Allow-Origin` for a configured origin — pins the CORS-wraps-everything middleware ordering from Phase 4 against the new rate-limit dependency.
+- [x] 5.14 [GREEN] Confirm CORSMiddleware (registered outside routing in Phase 4) still wraps a `429` raised by the route-level dependency; fix ordering if it does not. Re-run 5.13 → green.
+
+  **Honest note:** no RED state was observed for 5.13 specifically — by the time it was written, both the rate-limit dependency (5.9) and Phase 4's CORS-outermost-of-routing ordering already existed and were independently correct, so the test passed on the first run (`docker compose run --rm test pytest tests/test_cors.py -v`: 9 passed, no ordering fix needed). This is the same shape as the honest non-RED notes at tasks 1.11, 3.3, and 4.3 — recorded rather than a fabricated failure manufactured to satisfy the RED step.
+
+- [x] 5.15 `app/main.py`: log the resolved `TRUSTED_PROXY_COUNT` strategy once at boot (visible in the log rather than discovered during an incident); the first `429` in a process logs a `WARNING` with the resolved key.
+
+  **Observed, verbatim** (from a boot during the test run):
+  ```json
+  {"timestamp": "2026-09-04T21:25:21.278687+00:00", "level": "INFO", "logger": "app.ratelimit", "trusted_proxy_count": 1, "event": "ratelimit_strategy"}
+  ```
+  and the first `429` in the same process:
+  ```json
+  {"timestamp": "2026-09-04T17:51:50.285510+00:00", "level": "WARNING", "logger": "app.ratelimit", "event": "login_rate_limited", "request_id": "oracle-verify-fixed-id", "client_key": "10.0.0.2"}
+  ```
+  Both new fields (`trusted_proxy_count`, `client_key`) were added to `app/logging.py`'s `_ALLOWED_FIELDS` allowlist (design D23, Layer 1) — nothing outside that allowlist is ever rendered, so this required an explicit, deliberate extension rather than being reachable by accident.
+
+- [x] 5.16 `README.md`: document the rate-limit budgets (login 10/15min, register 5/hour), `TRUSTED_PROXY_COUNT` (required, no default — `0` for direct connections, `n` for `n` trusted proxies), and that the shape (outcome-blind counting, address-only key) is load-bearing while the numbers are explicitly revisable.
+
+  **Done:** new "Rate limiting" section (budgets table, the two load-bearing shape properties, `TRUSTED_PROXY_COUNT` cross-reference, the `--workers 1` correctness note), a new `TRUSTED_PROXY_COUNT` row in the Configuration table, the CORS section's stale "a future `429`" wording replaced with a concrete cross-reference, and the project-layout tree extended with `app/ratelimit.py`, `tests/__init__.py`, `tests/test_ratelimit.py`, `tests/test_auth_ratelimit.py`, and updated one-line descriptions for `tests/conftest.py`/`tests/test_config.py`/`tests/test_cors.py`.
 
 ---
 

@@ -14,6 +14,7 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.conftest import fresh_client_address
 
 client = TestClient(app)
 
@@ -34,6 +35,9 @@ def _all_captured_text(caplog: object) -> str:
 def test_login_does_not_leak_the_submitted_password(caplog) -> None:
     password = f"known-password-{uuid.uuid4().hex}"
     slug = f"logredact-login-{uuid.uuid4().hex[:8]}"
+    # Design D24: rate-limit-key isolation only -- see
+    # tests/conftest.py::fresh_client_address.
+    headers = {"X-Forwarded-For": fresh_client_address()}
 
     with caplog.at_level(logging.DEBUG):
         # Outcome 1: tenant/account does not exist yet -- still must not
@@ -41,10 +45,11 @@ def test_login_does_not_leak_the_submitted_password(caplog) -> None:
         client.post(
             "/auth/login",
             json={"tenant_slug": slug, "email": "nobody@example.com", "password": password},
+            headers=headers,
         )
         client.post(
             "/auth/register",
-            headers={"X-Registration-Token": REGISTRATION_TOKEN},
+            headers={"X-Registration-Token": REGISTRATION_TOKEN, **headers},
             json={
                 "tenant_slug": slug,
                 "name": "Redaction Test Owner",
@@ -56,11 +61,13 @@ def test_login_does_not_leak_the_submitted_password(caplog) -> None:
         client.post(
             "/auth/login",
             json={"tenant_slug": slug, "email": "owner@example.com", "password": "wrong"},
+            headers=headers,
         )
         # Outcome 3: correct password, real success.
         client.post(
             "/auth/login",
             json={"tenant_slug": slug, "email": "owner@example.com", "password": password},
+            headers=headers,
         )
 
     assert password not in _all_captured_text(caplog)
@@ -68,12 +75,15 @@ def test_login_does_not_leak_the_submitted_password(caplog) -> None:
 
 def test_register_does_not_leak_the_registration_token(caplog) -> None:
     slug = f"logredact-register-{uuid.uuid4().hex[:8]}"
+    # Design D24: rate-limit-key isolation only -- see
+    # tests/conftest.py::fresh_client_address.
+    address = fresh_client_address()
 
     with caplog.at_level(logging.DEBUG):
         # Outcome 1: wrong token, rejected (403).
         client.post(
             "/auth/register",
-            headers={"X-Registration-Token": "a-completely-wrong-token"},
+            headers={"X-Registration-Token": "a-completely-wrong-token", "X-Forwarded-For": address},
             json={
                 "tenant_slug": slug,
                 "name": "Redaction Test Owner",
@@ -86,7 +96,7 @@ def test_register_does_not_leak_the_registration_token(caplog) -> None:
         # full request context since it is the "interesting" path.
         client.post(
             "/auth/register",
-            headers={"X-Registration-Token": REGISTRATION_TOKEN},
+            headers={"X-Registration-Token": REGISTRATION_TOKEN, "X-Forwarded-For": address},
             json={
                 "tenant_slug": slug,
                 "name": "Redaction Test Owner",

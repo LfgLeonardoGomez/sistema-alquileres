@@ -20,7 +20,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
-from tests.conftest import RegisteredOwner
+from app.ratelimit import LOGIN_LIMIT
+from tests.conftest import RegisteredOwner, fresh_client_address
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,6 +36,9 @@ BASE_ENV = {
     "JWT_SECRET": "unit-test-secret-padded-to-32-bytes",
     "REGISTRATION_TOKEN": "unit-test-registration-token",
     "ENVIRONMENT": "development",
+    # Required, no default (design D24) -- irrelevant to every CORS case in
+    # this file, "0" is the minimal-impact choice.
+    "TRUSTED_PROXY_COUNT": "0",
 }
 
 
@@ -168,3 +172,25 @@ def test_public_availability_endpoint_shares_the_owner_scoped_cors_policy(
     refused = client.get(path, headers={"Origin": UNCONFIGURED_ORIGIN})
     assert refused.status_code == 200
     assert "access-control-allow-origin" not in {k.lower() for k in refused.headers}
+
+
+def test_a_429_response_still_carries_cors_headers() -> None:
+    """Pins the CORS-wraps-everything middleware ordering (design D23)
+    against the rate-limit dependency added in design D24: a browser
+    caller who has exhausted the login budget must still see
+    `Access-Control-Allow-Origin`, or the frontend shows an opaque
+    network error instead of "too many attempts"."""
+    headers = {"X-Forwarded-For": fresh_client_address(), "Origin": CONFIGURED_ORIGIN}
+    payload = {
+        "tenant_slug": "no-such-tenant-for-cors-429-test",
+        "email": "nobody@example.com",
+        "password": "irrelevant-wrong-password",
+    }
+
+    for _ in range(LOGIN_LIMIT):
+        response = client.post("/auth/login", json=payload, headers=headers)
+        assert response.status_code == 401
+
+    blocked = client.post("/auth/login", json=payload, headers=headers)
+    assert blocked.status_code == 429
+    assert blocked.headers.get("access-control-allow-origin") == CONFIGURED_ORIGIN

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.main import app
+from tests.conftest import fresh_client_address
 
 client = TestClient(app)
 
@@ -24,6 +25,9 @@ def _unique_slug() -> str:
 def test_register_without_registration_token_header_is_rejected() -> None:
     response = client.post(
         "/auth/register",
+        # Design D24: rate-limit-key isolation only -- see
+        # tests/conftest.py::fresh_client_address.
+        headers={"X-Forwarded-For": fresh_client_address()},
         json={
             "tenant_slug": _unique_slug(),
             "name": "New Owner",
@@ -37,7 +41,7 @@ def test_register_without_registration_token_header_is_rejected() -> None:
 def test_register_with_invalid_registration_token_is_rejected() -> None:
     response = client.post(
         "/auth/register",
-        headers={"X-Registration-Token": "wrong-token"},
+        headers={"X-Registration-Token": "wrong-token", "X-Forwarded-For": fresh_client_address()},
         json={
             "tenant_slug": _unique_slug(),
             "name": "New Owner",
@@ -54,7 +58,7 @@ def test_register_with_valid_token_creates_tenant_and_owner(
     slug = _unique_slug()
     response = client.post(
         "/auth/register",
-        headers={"X-Registration-Token": VALID_TOKEN},
+        headers={"X-Registration-Token": VALID_TOKEN, "X-Forwarded-For": fresh_client_address()},
         json={
             "tenant_slug": slug,
             "name": "New Owner",
@@ -97,6 +101,7 @@ def test_registering_a_duplicate_tenant_slug_is_rejected() -> None:
     slugs, so nothing would obviously break if the mapping were removed.
     """
     slug = _unique_slug()
+    address = fresh_client_address()
     payload = {
         "tenant_slug": slug,
         "name": "First Owner",
@@ -105,13 +110,15 @@ def test_registering_a_duplicate_tenant_slug_is_rejected() -> None:
     }
 
     first = client.post(
-        "/auth/register", headers={"X-Registration-Token": VALID_TOKEN}, json=payload
+        "/auth/register",
+        headers={"X-Registration-Token": VALID_TOKEN, "X-Forwarded-For": address},
+        json=payload,
     )
     assert first.status_code == 201, first.text
 
     duplicate = client.post(
         "/auth/register",
-        headers={"X-Registration-Token": VALID_TOKEN},
+        headers={"X-Registration-Token": VALID_TOKEN, "X-Forwarded-For": address},
         json={**payload, "email": "second@example.com"},
     )
 

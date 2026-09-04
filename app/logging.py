@@ -93,6 +93,12 @@ _ALLOWED_FIELDS: frozenset[str] = frozenset(
         "sqlstate",
         "constraint",
         "table",
+        # design D24 -- the resolved rate-limit strategy at boot, and the
+        # resolved key on the first 429 in a process. Never the raw
+        # request body or credentials; `client_key` is the same address
+        # `resolve_client_address` computed, nothing else.
+        "trusted_proxy_count",
+        "client_key",
     }
 )
 

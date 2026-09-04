@@ -13,9 +13,13 @@ from app.api.routers import auth, clients, dashboard, payments, properties, publ
 from app.config import get_settings
 from app.logging import configure_logging
 from app.middleware import CorrelationMiddleware
+from app.ratelimit import log_rate_limit_strategy
 
 settings = get_settings()
 configure_logging(settings.log_level)
+# Visible in the log at boot rather than discovered during an incident
+# (design D24).
+log_rate_limit_strategy()
 
 app = FastAPI(title="Cabin Booking API")
 

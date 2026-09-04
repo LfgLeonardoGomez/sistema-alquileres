@@ -208,6 +208,7 @@ Environment variables, set via `pydantic-settings` (`app/config.py`):
 | `ENVIRONMENT` | Yes, **no default** | Same no-default rule as the two secrets above, and for the same reason (design D20): a default of `development` would make the check below fail open on a forgotten variable. Set to `production` to enable it. |
 | `LOG_LEVEL` | No, default `INFO` | Root logger level. Not a secret and not dangerous when wrong -- unlike the settings above, a default is fine here (design D23). `DEBUG` is safe to raise for local debugging: `sqlalchemy.engine` is pinned to `WARNING` independently of this setting, so raising `LOG_LEVEL` never turns on SQL bound-parameter logging (password hashes, phone numbers, emails) as a side effect. `WARNING` is a supported value but loses the per-request access log line. |
 | `CORS_ALLOWED_ORIGINS` | Yes, **no default** | Comma-separated browser origins allowed on owner-scoped routes (design D22). Required for the same reason as the settings above -- an *absent* variable means nobody ever decided the CORS policy -- but unlike them, an **explicit empty value is a legal answer**: `CORS_ALLOWED_ORIGINS=` means "no browser access, deliberately" (this project has no frontend yet). The literal value `*`, anywhere in the comma-separated list, is **rejected at boot by a field validator**, not by review. `/public/{tenant_slug}/availability` shares this same allow-list rather than having its own -- CORS is not access control, and the endpoint is already unauthenticated and scrapeable by design (D9), so a second policy would be a second thing to get wrong for zero benefit. |
+| `TRUSTED_PROXY_COUNT` | Yes, **no default** | How many entries of `X-Forwarded-For`, counted from the RIGHT, were written by infrastructure this deployment trusts (design D24). `0` for a direct connection (ignores the header entirely and uses `request.client.host` -- correct for this project's current deployment shape, no reverse proxy in front of `api`); `n` for `n` trusted proxy hops. Required for the same fail-neither-open-nor-closed reason as `ENVIRONMENT` -- a default of `0` would silently be wrong the moment a proxy is added, collapsing every caller behind it into one shared rate-limit bucket and locking everyone out together. The resolved value is logged once at boot. |
 
 **When `ENVIRONMENT=production`, the app refuses to boot if
 `MIGRATOR_DATABASE_URL` is present anywhere in the process environment**
@@ -337,7 +338,9 @@ and the constraint name:
 `CORSMiddleware` (design D22) is registered so that the middleware
 nesting order, outermost to innermost, is **correlation -> CORS ->
 routes** -- a rejected preflight still gets a correlation id and a log
-line, and CORS still wraps every route including a future `429`.
+line, and CORS still wraps every route including the auth endpoints' `429`
+(design D24, see Rate limiting below) -- pinned by
+`tests/test_cors.py::test_a_429_response_still_carries_cors_headers`.
 `Starlette.add_middleware` inserts at the front of the middleware list on
 every call, so registering CORS *before* correlation in `app/main.py`'s
 code is what keeps correlation outermost, not the other way around --
@@ -390,6 +393,50 @@ accounts in different tenants.
 Every authenticated route resolves its tenant context (`app.tenant_id`,
 used by RLS) only from the verified JWT's `tid` claim — never from a
 header, query param, or body field (design D4).
+
+## Rate limiting
+
+`POST /auth/login` and `POST /auth/register` only (design D24). Every other
+route is unaffected, including `GET /public/{tenant_slug}/availability` —
+D9 accepted its scrapeability deliberately and this change does not reopen
+that.
+
+**Budgets** (owner-approved 2026-09-04 as a revisable starting point):
+
+| Route | Limit |
+|---|---|
+| `POST /auth/login` | 10 attempts per 15 minutes |
+| `POST /auth/register` | 5 attempts per hour |
+
+Exceeding the budget returns `429` with a `Retry-After` header (exact
+seconds until the oldest attempt in the window expires, not a constant).
+
+**The shape is load-bearing; the numbers above are not.** Two properties
+must never be traded away when tuning the budgets:
+
+- **Outcome-blind counting.** The limiter counts every *attempt* — success
+  or failure, real account or not — before the handler runs, and never
+  learns which. A limiter that only counts failures, or that locks the
+  *account* rather than the *caller*, becomes an account-existence oracle:
+  it would hand back exactly what the single-generic-`401` rule above
+  exists to hide.
+- **Address-only key, never tenant-slug-inclusive.** With one owner per
+  tenant and a public `tenant_slug`, a slug-keyed limiter is a remote
+  lockout button — anyone who reads a tenant's slug off its public
+  calendar URL could send enough bad logins to lock the real owner out of
+  their own system.
+
+**`TRUSTED_PROXY_COUNT`** (see Configuration above) tells the limiter how
+many `X-Forwarded-For` entries, from the RIGHT, were written by trusted
+infrastructure — the leftmost entry is always attacker-controlled on a
+direct connection, so `0` ignores the header entirely. The resolved
+strategy is logged once at boot, and the first `429` in a process logs a
+`WARNING` with the resolved key, so a misconfigured proxy count is visible
+in the log rather than discovered via a support ticket.
+
+State is in-process and per-worker, which is why the production image's
+`CMD` (see Dockerfile) pins `--workers 1` — a second worker process would
+keep its own independent budget, silently doubling the effective limit.
 
 ## Properties and clients
 
@@ -535,6 +582,7 @@ app/
   logging.py         # JSON formatter (allowlist), correlation contextvar, describe_db_error (D23)
   middleware.py      # CorrelationMiddleware: X-Request-ID in/out, access log line (D23)
   errors.py          # Central HTTP error mapping: auth (D10) + SQLSTATE dispatch (D11)
+  ratelimit.py       # Sliding-window log limiter: outcome-blind, address-only, bounded LRU (D24)
   db/
     base.py          # SQLAlchemy 2.0 declarative Base
     session.py       # Engine + SessionLocal (app role) + tenant_scoped_session (D4)
@@ -557,7 +605,7 @@ app/
   api/
     deps.py          # PrincipalDep, TenantSessionDep, PublicSessionDep (D9)
     routers/
-      auth.py        # /auth/register, /auth/login, /me
+      auth.py        # /auth/register, /auth/login, /me -- login/register carry the rate-limit dependency (D24)
       properties.py  # /properties CRUD
       clients.py     # /clients CRUD (POST is find-or-create-or-reactivate)
       reservations.py# /reservations CRUD + /reservations/{id}/cancel
@@ -581,13 +629,18 @@ scripts/
   reset_db.py        # migrate to head + seed (non-destructive, retained misnomer -- D18)
   seed.py            # Development seed data (3 tenants, ON CONFLICT DO NOTHING)
 tests/
-  conftest.py                       # Migrates (downgrade base -> upgrade head) + seeds the test DB
+  __init__.py                       # Makes `tests` a real package -- see its docstring: without this, pytest's own
+                                     # conftest.py auto-load and an explicit `from tests.conftest import ...` resolved
+                                     # to TWO separate module objects, silently duplicating fresh_client_address's counter
+  conftest.py                       # Migrates (downgrade base -> upgrade head) + seeds the test DB; fresh_client_address (D24)
   test_health.py
-  test_config.py                    # Settings refuse to boot without secrets/ENVIRONMENT, or in prod with MIGRATOR_DATABASE_URL set (D20)
+  test_config.py                    # Settings refuse to boot without secrets/ENVIRONMENT/TRUSTED_PROXY_COUNT, or in prod with MIGRATOR_DATABASE_URL set (D20/D24)
   test_logging_redaction.py         # No log line leaks a login password or a registration token (D23)
   test_correlation.py               # X-Request-ID generated/reused/validated; same id on every log line incl. a forced 500 (D23)
   test_logging_db_diagnostics.py    # A 23505 logs sqlstate+constraint, never the conflicting phone number (D23)
-  test_cors.py                      # * rejected at boot, configured/unconfigured origins, X-Registration-Token preflight, /public shares the policy (D22)
+  test_cors.py                      # * rejected at boot, configured/unconfigured origins, X-Registration-Token preflight, /public shares the policy, 429 keeps CORS headers (D22/D24)
+  test_ratelimit.py                 # Unit, no DB: proxy-trust address resolution, sliding-window log semantics (D24)
+  test_auth_ratelimit.py            # Integration: 429+Retry-After on both routes, below-budget 401 unchanged, D10-preservation (byte-identical 429) (D24)
   test_seed.py
   test_rls_structural.py            # pg_catalog: every tenant_id table has RLS enabled AND forced
   test_schema_is_migrated.py        # alembic_version == head; no pending autogenerate diff (D17)

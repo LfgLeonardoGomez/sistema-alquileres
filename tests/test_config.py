@@ -23,6 +23,10 @@ BASE_ENV = {
     # access, deliberately" answer, and the minimal-impact choice for
     # every test in this file that isn't specifically about CORS.
     "CORS_ALLOWED_ORIGINS": "",
+    # Required, no default (design D24) -- "0" (no reverse proxy) is the
+    # minimal-impact choice for every test in this file that isn't
+    # specifically about TRUSTED_PROXY_COUNT.
+    "TRUSTED_PROXY_COUNT": "0",
 }
 
 
@@ -105,6 +109,19 @@ def test_settings_refuses_to_boot_in_production_with_migrator_credential_present
     result = _run_settings_construction(env)
     assert result.returncode != 0
     assert "migrator_database_url" in result.stderr.lower()
+
+
+def test_settings_refuses_to_boot_without_trusted_proxy_count() -> None:
+    """`TRUSTED_PROXY_COUNT` has no default -- same rule as `environment`
+    and `cors_allowed_origins` (design D24): a default of `0` would
+    silently be wrong the moment a reverse proxy is added in front of the
+    app, collapsing every caller behind it into one shared rate-limit
+    bucket."""
+    env = dict(BASE_ENV)
+    del env["TRUSTED_PROXY_COUNT"]
+    result = _run_settings_construction(env)
+    assert result.returncode != 0
+    assert "trusted_proxy_count" in result.stderr.lower()
 
 
 def test_settings_allows_migrator_credential_present_outside_production() -> None:

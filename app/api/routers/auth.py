@@ -9,20 +9,30 @@ routes set `app.tenant_id` before touching `users`.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Header, status
+from fastapi import APIRouter, Depends, Header, status
 from sqlalchemy import text
 
 from app import errors
 from app.api.deps import PrincipalDep, TenantSessionDep
 from app.config import get_settings
 from app.db.session import SessionLocal, tenant_scoped_session
+from app.ratelimit import enforce_login_rate_limit, enforce_register_rate_limit
 from app.schemas.auth import LoginRequest, MeResponse, RegisterRequest, TokenResponse
 from app.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(tags=["auth"])
 
 
-@router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/auth/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    # Route-level dependency, not middleware (design D24): attached to the
+    # route object so it cannot drift from the router the way a
+    # path-matching middleware could, and it runs before this handler has
+    # looked anything up.
+    dependencies=[Depends(enforce_register_rate_limit)],
+)
 def register(
     payload: RegisterRequest,
     x_registration_token: Annotated[str | None, Header()] = None,
@@ -57,7 +67,11 @@ def register(
     return TokenResponse(access_token=access_token)
 
 
-@router.post("/auth/login", response_model=TokenResponse)
+@router.post(
+    "/auth/login",
+    response_model=TokenResponse,
+    dependencies=[Depends(enforce_login_rate_limit)],
+)
 def login(payload: LoginRequest) -> TokenResponse:
     # Tenant resolution reads the GLOBAL, un-RLS'd `tenants` table (design
     # D5) -- there is no tenant context to set yet, that is what this step

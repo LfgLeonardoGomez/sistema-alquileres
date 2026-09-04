@@ -11,6 +11,14 @@ but for a different reason: an *absent* variable means nobody ever
 decided the CORS policy, whereas an explicit empty string is a legal,
 deliberate answer ("no browser access") -- only a missing variable is
 refused.
+
+`trusted_proxy_count` follows the same no-default rule for yet another
+reason (design D24): it tells `app/ratelimit.py` how many entries of
+`X-Forwarded-For`, from the right, were written by infrastructure this
+deployment trusts. A default of `0` would silently make a real proxy's
+address the "client" for every caller behind it -- collapsing everyone
+into one shared rate-limit bucket and locking them all out together the
+first time one of them hits the budget. Fail loud at boot instead.
 """
 
 import os
@@ -49,6 +57,10 @@ class Settings(BaseSettings):
     # a confusing error. Split via `_split_origins` in the `cors_origins`
     # property below instead.
     cors_allowed_origins: str
+    # Required, no default (design D24) -- same fail-neither-open-nor-closed
+    # rule as `environment`/`cors_allowed_origins` above. `0` for a direct
+    # connection (no reverse proxy), `n` for `n` trusted proxy hops.
+    trusted_proxy_count: int = Field(ge=0)
 
     @field_validator("cors_allowed_origins")
     @classmethod
