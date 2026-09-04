@@ -11,7 +11,7 @@ services:
       ALQUILERES_APP_PASSWORD: alquileres_app_password
     volumes:
       - db-data:/var/lib/postgresql/data
-      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./back/docker/initdb:/docker-entrypoint-initdb.d:ro
     ports:
       - "5433:5432"
     healthcheck:
@@ -31,7 +31,7 @@ services:
       ALQUILERES_MIGRATOR_PASSWORD: alquileres_migrator_password
       ALQUILERES_APP_PASSWORD: alquileres_app_password
     volumes:
-      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./back/docker/initdb:/docker-entrypoint-initdb.d:ro
     ports:
       - "5434:5432"
     healthcheck:
@@ -42,10 +42,10 @@ services:
 
   api:
     build:
-      context: .
+      context: ./back
       target: dev
     volumes:
-      - .:/app
+      - ./back:/app
     environment:
       # No MIGRATOR_DATABASE_URL here: the API process must never hold
       # table-owner credentials (design D20). The `migrate` service below
@@ -69,10 +69,10 @@ services:
 
   migrate:
     build:
-      context: .
+      context: ./back
       target: dev
     volumes:
-      - .:/app
+      - ./back:/app
     environment:
       # The only service that ever holds migrator credentials (design D20).
       MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db:5432/alquileres
@@ -86,10 +86,10 @@ services:
 
   test:
     build:
-      context: .
+      context: ./back
       target: dev
     volumes:
-      - .:/app
+      - ./back:/app
     environment:
       DATABASE_URL: postgresql+psycopg://alquileres_app:alquileres_app_password@db-test:5432/alquileres_test
       MIGRATOR_DATABASE_URL: postgresql+psycopg://alquileres_migrator:alquileres_migrator_password@db-test:5432/alquileres_test
