@@ -265,20 +265,69 @@ images otherwise.
 > `design.md`'s later, owner-approved resolution, and 5.1 corrects the spec
 > wording so the artifact trail agrees with what gets built.
 
-- [ ] 5.1 `openspec/changes/frontend-api-alignment/specs/payment-tracking/spec.md`: correct "Payment Method Is A Stored Enum" to name the stored values as `cash`, `transfer`, `other` (English) rather than `efectivo`/`transferencia`/`otro`, with a note that these map to the Spanish labels `Efectivo`/`Transferencia`/`Otro` at display time only, matching `reservations.status`'s existing stored-value/display-label split. Update the requirement's two scenarios' example values accordingly (`method = "transfer"` accepted, `method = "card"` or similar unrecognized value rejected).
-- [ ] 5.2 `back/migrations/versions/0003_payment_method.py` (create): `op.add_column("payments", sa.Column("payment_method", sa.String(20), nullable=False, server_default="other"))` then `op.alter_column("payments", "payment_method", server_default=None)` then `op.create_check_constraint("payments_method_valid", "payments", "payment_method IN ('cash', 'transfer', 'other')")`. **The DDL-default-then-drop sequence is required, not decoration:** `payments` is `FORCE ROW LEVEL SECURITY` with a policy predicated on `app.tenant_id` (`back/migrations/versions/0001_baseline.py`), which is unset inside a migration — an `UPDATE payments SET payment_method = 'other'` run here would silently touch **zero rows**, even though the migrator owns the table, because that is precisely what `FORCE` does. `ADD COLUMN ... DEFAULT` is DDL and is not subject to RLS at all; it fills every existing row identically whether the table is empty or populated. **Never `UPDATE` inside a migration against a `FORCE`d tenant-scoped table** — this is the general rule this task is the first exercise of. `downgrade()` drops the constraint then the column, and is lossy (documented, not fixed here — see design D45's Rollback section).
-- [ ] 5.3 [TEST] Run `docker compose run --rm test` — confirm the session fixture's `downgrade base` → `upgrade head` cycle (design D15) exercises 0003's `upgrade()`/`downgrade()` cleanly.
-- [ ] 5.4 `back/app/models/payment.py`: add `PAYMENT_METHODS = ("cash", "transfer", "other")` (mirroring `RESERVATION_STATUSES`'s pattern) and a `payment_method: Mapped[str] = mapped_column(String(20), nullable=False)` column — no Python-side default; only the owner knows how money arrived, so the API must always supply it (same rule `paid_on` already follows).
-- [ ] 5.5 `back/app/schemas/payment.py`: `PaymentCreate.method: Literal["cash", "transfer", "other"]` (required, no default); `PaymentRead.purpose: Literal["deposit", "payment", "refund"]` (required, never null).
-- [ ] 5.6 [RED] `back/tests/test_payments.py` (extend): recording a payment without `method` → 422; recording one with `method = "card"` → 422; recording one with `method = "transfer"` is accepted and the stored row reports `method = "transfer"` on read.
-- [ ] 5.7 [GREEN] `back/app/api/routers/payments.py`: `create_payment` passes `payment_method=payload.method` into `Payment(...)`. Re-run 5.6 → green.
-- [ ] 5.8 [RED] same file: a direct SQL `INSERT ... payment_method = 'cheque'` as `alquileres_app` raises `23514` — the concurrency-safe backstop distinct from the Pydantic 422 path in 5.6.
-- [ ] 5.9 [GREEN] confirmed by 5.2's `payments_method_valid` CHECK. Re-run 5.8 → green.
-- [ ] 5.10 [RED] `back/tests/test_payments.py` (extend): a pure, no-DB unit test for a new `assign_purposes()` function — among a list of payments, the earliest positive `paid_on` is labeled `"deposit"`, every other positive one `"payment"`, a negative-amount entry is labeled `"refund"` (or excluded from the deposit/payment labeling, per its own case); two same-`paid_on` positive payments produce a stable label across repeated calls (tie-break by `created_at`, then `id`).
-- [ ] 5.11 [GREEN] `back/app/services/payments.py` (create — the fourth service module, deliberately, per design D3/D42): `assign_purposes(payments: Sequence[Payment]) -> dict[uuid.UUID, str]`, ordering key `(paid_on, created_at, id)`, only positive amounts are deposit/payment candidates. Re-run 5.10 → green.
-- [ ] 5.12 [RED] `back/tests/test_payments.py` (extend, integration): a reservation where a payment dated `2026-03-02` is **recorded first** and a payment dated `2026-01-05` is **recorded second** — reading the payments list presents the `2026-01-05` one as `"deposit"` and the `2026-03-02` one as `"payment"` (ordering by `paid_on`, never insertion order); a reservation with one positive payment and one refund presents the refund as neither `"deposit"` nor `"payment"`.
-- [ ] 5.13 [GREEN] `back/app/api/routers/payments.py`: `list_payments` labels every `PaymentRead.purpose` via `assign_purposes()` over the full ordered list; `create_payment` re-selects the reservation's payments after its existing `session.flush()` and labels the new row from the same function (one extra `SELECT` on the write path, so `purpose`'s absence never means two different things). Re-run 5.12 → green.
-- [ ] 5.14 `back/tests/test_schema_no_derived_columns.py`: add `"purpose"` to `_FORBIDDEN_COLUMN_NAMES`. Run the full suite — confirm still green (no `purpose` column exists anywhere; it is Python-only, over rows already in hand).
+> **Ordering rationale — this phase was reordered before implementation,
+> and the reasons are part of the contract.** An earlier draft ran
+> migration → model → schema → test → router. Three defects came out of
+> reviewing it, and the order below exists to answer them:
+>
+> 1. **The migration makes `payment_method` mandatory before anything
+>    supplies it.** `Payment(...)` is constructed in exactly ONE place in
+>    the entire codebase (`back/app/api/routers/payments.py`), and every
+>    test creates payments through the HTTP API. The moment `0003` runs its
+>    `alter_column(server_default=None)`, every payment `INSERT` violates
+>    `NOT NULL` until the router supplies the value — breaking nine test
+>    files (`test_payments`, `test_refunds`, `test_dashboard_collected`,
+>    `test_reservation_balance`, `test_isolation_payments`,
+>    `test_isolation_dashboard`, `test_client_reactivation`,
+>    `test_public_contract`, `test_schema_no_derived_columns`) plus
+>    `test_schema_is_migrated`'s model-to-migration diff. That is a broken
+>    suite, not a designed RED, and a broken suite is where a real
+>    regression hides. The DDL and the write path that satisfies it are
+>    therefore **one task** (5.3): the minimum *coherent* unit, not the
+>    minimum number of lines. A mandatory column nobody fills is not an
+>    intermediate state of the system — it is a system that does not run.
+> 2. **Production code must not precede the first RED.** With the schema's
+>    `Literal` already in place, two of the three assertions in the old
+>    method test would have passed on the day they were written. The tests
+>    move ahead of the code (5.2) so all three genuinely fail first.
+> 3. **A test that cannot fail must not be labelled `[RED]`.** The CHECK
+>    backstop test was tagged `[RED]`, but the constraint it exercises
+>    lands with the migration, so it passes the moment it is written. It is
+>    now `[TEST]` (5.5) — a real and necessary proof, honestly labelled.
+>
+> Tasks 5.6–5.9 are unchanged from the earlier draft: pure unit test before
+> the function, integration test before the router change. That part was
+> already correct TDD.
+
+- [ ] 5.1 `openspec/changes/frontend-api-alignment/specs/payment-tracking/spec.md`: correct "Payment Method Is A Stored Enum" to name the stored values as `cash`, `transfer`, `other` (English) rather than `efectivo`/`transferencia`/`otro`, with a note that these map to the Spanish labels `Efectivo`/`Transferencia`/`Otro` at display time only, matching `reservations.status`'s existing stored-value/display-label split. Update the requirement's two scenarios' example values accordingly (`method = "transfer"` accepted, `method = "card"` or similar unrecognized value rejected). Run `openspec validate frontend-api-alignment --strict` afterwards — it passes today and must keep passing.
+
+- [ ] 5.2 [RED] `back/tests/test_payments.py` (extend), written **before** any of 5.3's production code exists, so that all three assertions genuinely fail: recording a payment **without** `method` → 422 (today it is silently accepted, so this fails); recording one with `method = "card"` → 422 (today accepted); recording one with `method = "transfer"` is accepted and the stored row reports `method = "transfer"` on read (today the field does not exist in the response). Run and record all three failures — if any of them passes at this point, STOP and report it rather than proceeding, because it would mean the field already exists somewhere and the rest of this phase rests on a false premise.
+
+- [ ] 5.3 [GREEN] **One coherent unit — the DDL and the write path that satisfies it land together** (see Ordering rationale 1). Do the four sub-steps in this order, and run the suite only at the end:
+
+  **(a)** `back/migrations/versions/0003_payment_method.py` (create): `op.add_column("payments", sa.Column("payment_method", sa.String(20), nullable=False, server_default="other"))` then `op.alter_column("payments", "payment_method", server_default=None)` then `op.create_check_constraint("payments_method_valid", "payments", "payment_method IN ('cash', 'transfer', 'other')")`. **The DDL-default-then-drop sequence is required, not decoration:** `payments` is `FORCE ROW LEVEL SECURITY` with a policy predicated on `app.tenant_id` (`back/migrations/versions/0001_baseline.py`), which is unset inside a migration — an `UPDATE payments SET payment_method = 'other'` run here would silently touch **zero rows**, even though the migrator owns the table, because that is precisely what `FORCE` does. `ADD COLUMN ... DEFAULT` is DDL and is not subject to RLS at all; it fills every existing row identically whether the table is empty or populated. **Never `UPDATE` inside a migration against a `FORCE`d tenant-scoped table** — this is the general rule this task is the first exercise of, and it is the same family of hazard Phase 4 recorded: RLS denies silently, so the statement reports success and changes nothing. `downgrade()` drops the constraint then the column, and is lossy (documented, not fixed here — see design D45's Rollback section).
+
+  **(b)** `back/app/models/payment.py`: add `PAYMENT_METHODS = ("cash", "transfer", "other")` (mirroring `RESERVATION_STATUSES`'s pattern) and a `payment_method: Mapped[str] = mapped_column(String(20), nullable=False)` column — no Python-side default; only the owner knows how money arrived, so the API must always supply it (same rule `paid_on` already follows). Keeping this in the same task as (a) is also what stops `test_schema_is_migrated.py`'s `compare_metadata()` from reporting model-to-migration drift as an unexplained failure.
+
+  **(c)** `back/app/schemas/payment.py`: `PaymentCreate.method: Literal["cash", "transfer", "other"]` (required, no default); `PaymentRead.purpose: Literal["deposit", "payment", "refund"]` (required, never null).
+
+  **(d)** `back/app/api/routers/payments.py`: `create_payment` passes `payment_method=payload.method` into `Payment(...)` — the single construction site in the codebase.
+
+  Re-run 5.2 → green, then run the full suite and confirm the nine payment-creating test files are green too. Record the count.
+
+- [ ] 5.4 [TEST] Run `docker compose run --rm test` — confirm the session fixture's `alembic downgrade base` → `upgrade head` cycle (design D15) exercises 0003's `upgrade()` and `downgrade()` cleanly. This check is meaningful only on an otherwise-green suite, which is why it follows 5.3 rather than the migration: a failure here is now unambiguously about the migration cycle and nothing else. Record the observed output.
+
+- [ ] 5.5 [TEST] `back/tests/test_payments.py` (extend): a direct SQL `INSERT ... payment_method = 'cheque'` as `alquileres_app` raises `23514`. **Labelled `[TEST]`, not `[RED]`, deliberately** — the `payments_method_valid` CHECK lands with 5.3(a), so this test passes the moment it is written and can never have a red phase. It is still necessary: it proves the concurrency-safe database backstop exists independently of the Pydantic 422 path in 5.2, which is the whole point of the house pattern (D11). Connect as `alquileres_app`, never `alquileres_migrator`.
+
+- [ ] 5.6 [RED] `back/tests/test_payments.py` (extend): a pure, no-DB unit test for a new `assign_purposes()` function — among a list of payments, the earliest positive `paid_on` is labeled `"deposit"`, every other positive one `"payment"`, a negative-amount entry is labeled `"refund"` (or excluded from the deposit/payment labeling, per its own case); two same-`paid_on` positive payments produce a stable label across repeated calls (tie-break by `created_at`, then `id`).
+
+- [ ] 5.7 [GREEN] `back/app/services/payments.py` (create — the fourth service module, deliberately, per design D3/D42): `assign_purposes(payments: Sequence[Payment]) -> dict[uuid.UUID, str]`, ordering key `(paid_on, created_at, id)`, only positive amounts are deposit/payment candidates. Re-run 5.6 → green.
+
+- [ ] 5.8 [RED] `back/tests/test_payments.py` (extend, integration): a reservation where a payment dated `2026-03-02` is **recorded first** and a payment dated `2026-01-05` is **recorded second** — reading the payments list presents the `2026-01-05` one as `"deposit"` and the `2026-03-02` one as `"payment"` (ordering by `paid_on`, never insertion order); a reservation with one positive payment and one refund presents the refund as neither `"deposit"` nor `"payment"`.
+
+- [ ] 5.9 [GREEN] `back/app/api/routers/payments.py`: `list_payments` labels every `PaymentRead.purpose` via `assign_purposes()` over the full ordered list; `create_payment` re-selects the reservation's payments after its existing `session.flush()` and labels the new row from the same function (one extra `SELECT` on the write path, so `purpose`'s absence never means two different things). Re-run 5.8 → green.
+
+- [ ] 5.10 `back/tests/test_schema_no_derived_columns.py`: add `"purpose"` to `_FORBIDDEN_COLUMN_NAMES`. Run the full suite — confirm still green (no `purpose` column exists anywhere; it is Python-only, over rows already in hand).
 
 ---
 
@@ -290,5 +339,5 @@ images otherwise.
 | 2 | `reservation-booking` | 15 (2.1–2.15) | No migration |
 | 3 | `client-management` | 1 (3.1) | Closed as no code (D47) — decision + tripwire recorded, no endpoint |
 | 4 | `tenant-management` / `tenant-isolation` / `public-tenant-contact` / `public-availability-calendar` | 21 (4.1–4.21) | Migration `0002`. 1 BLOCKING human-approval gate (4.1, covers D38+D39). Internal order enforced: RLS proven before the write endpoint exists |
-| 5 | `payment-tracking` | 14 (5.1–5.14) | Migration `0003`. Starts with a spec-wording correction (English stored values, per design's later resolution) |
-| **Total** | | **57** | 1 BLOCKING human-approval gate |
+| 5 | `payment-tracking` | 10 (5.1–5.10) | Migration `0003`. Reordered before implementation: tests precede production code, and the DDL ships with the write path that satisfies it (see the phase's Ordering rationale). Starts with a spec-wording correction (English stored values, per design's later resolution) |
+| **Total** | | **53** | 1 BLOCKING human-approval gate |
