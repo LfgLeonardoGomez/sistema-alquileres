@@ -1,10 +1,5 @@
-"""Payment CRUD under a reservation (payment-tracking spec, design D7).
-
-No `app/services/payments.py` module exists -- design D3 lists
-`services/` as reserved for the three modules with real logic (pricing,
-find-or-create-or-reactivate, aggregation); recording or listing a payment
-is a plain insert/select with no comparable logic, so it lives directly in
-this router, same as `properties`.
+"""Payment CRUD under a reservation (payment-tracking spec, design D7,
+D42).
 
 `POST` creates a payment (positive `amount`) or a refund (negative
 `amount`) against a reservation -- the sign is the only discriminator, no
@@ -12,6 +7,16 @@ this router, same as `properties`.
 rationale as design D6): the `amount <> 0` CHECK violation must raise
 while this handler is still on the stack so `app/errors.py` can still
 shape a clean 422.
+
+Both routes label `PaymentRead.purpose` via `app/services/payments.py`'s
+`assign_purposes()` (design D42) -- purpose is a property of a row's
+POSITION within its reservation's payment list, not of the row itself, so
+it cannot be a `computed_field` on `PaymentRead` and must be attached
+here, over the rows this handler already has in hand. `list_payments`
+spends zero extra queries (it already selects the whole list);
+`create_payment` re-selects the reservation's payments after its existing
+`flush()` -- one extra `SELECT` on the write path, taken so `purpose`'s
+absence never means two different things (unset vs. not yet computed).
 """
 
 import uuid
@@ -24,6 +29,7 @@ from app.api.deps import PrincipalDep, TenantSessionDep
 from app.models.payment import Payment
 from app.models.reservation import Reservation
 from app.schemas.payment import PaymentCreate, PaymentRead
+from app.services.payments import assign_purposes
 
 router = APIRouter(tags=["payments"])
 
@@ -47,12 +53,17 @@ def create_payment(
         tenant_id=principal.tenant_id,
         reservation_id=reservation_id,
         amount=payload.amount,
+        payment_method=payload.method,
         note=payload.note,
     )
     if payload.paid_on is not None:
         payment.paid_on = payload.paid_on
     session.add(payment)
     session.flush()
+
+    stmt = select(Payment).where(Payment.reservation_id == reservation_id)
+    reservation_payments = list(session.execute(stmt).scalars().all())
+    payment.purpose = assign_purposes(reservation_payments)[payment.id]
     return payment
 
 
@@ -66,4 +77,8 @@ def list_payments(reservation_id: uuid.UUID, session: TenantSessionDep) -> list[
         .where(Payment.reservation_id == reservation_id)
         .order_by(Payment.created_at)
     )
-    return list(session.execute(stmt).scalars().all())
+    payments = list(session.execute(stmt).scalars().all())
+    purposes = assign_purposes(payments)
+    for payment in payments:
+        payment.purpose = purposes[payment.id]
+    return payments

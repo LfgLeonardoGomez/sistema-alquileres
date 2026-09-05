@@ -54,13 +54,13 @@ def test_a_negative_amount_payment_records_as_a_refund(
     client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=registered_owner.headers,
-        json={"amount": "2000.00"},
+        json={"amount": "2000.00", "method": "cash"},
     )
 
     response = client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=registered_owner.headers,
-        json={"amount": "-2000.00", "note": "Guest cancelled, full refund"},
+        json={"amount": "-2000.00", "method": "cash", "note": "Guest cancelled, full refund"},
     )
     assert response.status_code == 201
     assert Decimal(str(response.json()["amount"])) == Decimal("-2000.00")
@@ -74,12 +74,12 @@ def test_refund_increases_balance_less_paid(registered_owner: RegisteredOwner) -
     client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=registered_owner.headers,
-        json={"amount": "3000.00"},
+        json={"amount": "3000.00", "method": "cash"},
     )
     client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=registered_owner.headers,
-        json={"amount": "-1000.00"},
+        json={"amount": "-1000.00", "method": "cash"},
     )
 
     read = client.get(f"/reservations/{reservation['id']}", headers=registered_owner.headers)
@@ -94,7 +94,7 @@ def test_cancellation_does_not_create_a_refund_automatically(
     client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=registered_owner.headers,
-        json={"amount": "2000.00"},
+        json={"amount": "2000.00", "method": "cash"},
     )
 
     cancel = client.post(

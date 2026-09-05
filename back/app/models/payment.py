@@ -2,12 +2,24 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKeyConstraint, Numeric, Text, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKeyConstraint,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.services.dates import today_ar
+
+PAYMENT_METHODS = ("cash", "transfer", "other")
 
 
 class Payment(Base):
@@ -46,6 +58,10 @@ class Payment(Base):
             name="payments_reservation_tenant_fk",
         ),
         CheckConstraint("amount <> 0", name="payments_amount_nonzero"),
+        CheckConstraint(
+            "payment_method IN ('cash', 'transfer', 'other')",
+            name="payments_method_valid",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -55,6 +71,10 @@ class Payment(Base):
     reservation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     paid_on: Mapped[date] = mapped_column(Date, nullable=False, default=today_ar)
+    # No Python-side default, same rule `paid_on` follows: only the owner
+    # knows how a given amount arrived, so the API must always supply it
+    # (design D41).
+    payment_method: Mapped[str] = mapped_column(String(20), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

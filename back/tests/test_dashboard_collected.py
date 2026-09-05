@@ -45,7 +45,7 @@ def _pay(owner: RegisteredOwner, reservation_id: str, amount: str, paid_on: str)
     response = client.post(
         f"/reservations/{reservation_id}/payments",
         headers=owner.headers,
-        json={"amount": amount, "paid_on": paid_on},
+        json={"amount": amount, "paid_on": paid_on, "method": "cash"},
     )
     assert response.status_code == 201
 

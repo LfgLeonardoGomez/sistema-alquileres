@@ -98,8 +98,9 @@ def _insert_payment_row(
         )
         conn.execute(
             text(
-                "INSERT INTO payments (id, tenant_id, reservation_id, amount, paid_on) "
-                "VALUES (:id, :tid, :rid, :amount, :paid_on)"
+                "INSERT INTO payments "
+                "(id, tenant_id, reservation_id, amount, paid_on, payment_method) "
+                "VALUES (:id, :tid, :rid, :amount, :paid_on, :payment_method)"
             ),
             {
                 "id": uuid.uuid4(),
@@ -107,6 +108,7 @@ def _insert_payment_row(
                 "rid": reservation_id,
                 "amount": amount,
                 "paid_on": "2026-05-01",
+                "payment_method": "cash",
             },
         )
 
@@ -261,7 +263,7 @@ def test_price_can_be_edited_below_the_amount_already_paid(
     payment = client.post(
         f"/reservations/{reservation_id}/payments",
         headers=registered_owner.headers,
-        json={"amount": "800.00"},
+        json={"amount": "800.00", "method": "cash"},
     )
     assert payment.status_code == 201, payment.text
 

@@ -254,16 +254,33 @@ images otherwise.
 
 ## Phase 5: Payment Method + Purpose (`payment-tracking`) — migration `0003`
 
-> **Spec/design reconciliation, flagged before writing code (task 5.1):**
+> **Spec/design reconciliation (task 5.1) — CORRECTED, the premise was
+> false.** This block previously stated that
 > `openspec/changes/frontend-api-alignment/specs/payment-tracking/spec.md`'s
-> "Payment Method Is A Stored Enum" requirement currently names the stored
-> values as `efectivo`/`transferencia`/`otro`. `design.md`'s D41 and its
-> "Owner decisions" closing section resolve Open Question 2 the other way —
-> **English stored values (`cash`, `transfer`, `other`), Spanish display
-> labels** — following the precedent `reservations.status` already set. The
-> spec's wording predates that resolution. This task list follows
-> `design.md`'s later, owner-approved resolution, and 5.1 corrects the spec
-> wording so the artifact trail agrees with what gets built.
+> "Payment Method Is A Stored Enum" requirement named the stored values as
+> `efectivo`/`transferencia`/`otro`, and task 5.1 was written to correct
+> them to English. **It did not.** That spec has carried the English values
+> `cash`, `transfer`, `other` since `11750d3`, the commit that first wrote
+> it — the wording was never wrong, so there was nothing for 5.1 to fix.
+>
+> The claim was written into this task list at `d4d1649`, survived the
+> Phase 5 reordering at `3762b03` because it was copied forward without
+> being checked against the file it describes, and was caught only when an
+> implementer opened the spec to edit it and found it already correct.
+>
+> The substance is unchanged and still binding: `design.md`'s D41 and its
+> "Owner decisions" section resolve Open Question 2 as **English stored
+> values (`cash`, `transfer`, `other`) with Spanish display labels**,
+> following the precedent `reservations.status` already set. The spec, the
+> design, and the implementation agree. Task 5.1 is therefore a no-op
+> verification, recorded honestly as one rather than deleted — a task list
+> that quietly drops a task it got wrong teaches the next reader nothing.
+>
+> **The general lesson, which is why this stays here:** a claim about a
+> file is not verified by having been written down confidently. Three spec
+> drifts were found in Phase 4 the same way — by opening the file. This one
+> ran in the opposite direction: a document claiming a defect that did not
+> exist. Both cost the same to catch and the same to prevent.
 
 > **Ordering rationale — this phase was reordered before implementation,
 > and the reasons are part of the contract.** An earlier draft ran
@@ -299,11 +316,26 @@ images otherwise.
 > the function, integration test before the router change. That part was
 > already correct TDD.
 
-- [ ] 5.1 `openspec/changes/frontend-api-alignment/specs/payment-tracking/spec.md`: correct "Payment Method Is A Stored Enum" to name the stored values as `cash`, `transfer`, `other` (English) rather than `efectivo`/`transferencia`/`otro`, with a note that these map to the Spanish labels `Efectivo`/`Transferencia`/`Otro` at display time only, matching `reservations.status`'s existing stored-value/display-label split. Update the requirement's two scenarios' example values accordingly (`method = "transfer"` accepted, `method = "card"` or similar unrecognized value rejected). Run `openspec validate frontend-api-alignment --strict` afterwards — it passes today and must keep passing.
+- [x] 5.1 `openspec/changes/frontend-api-alignment/specs/payment-tracking/spec.md`: correct "Payment Method Is A Stored Enum" to name the stored values as `cash`, `transfer`, `other` (English) rather than `efectivo`/`transferencia`/`otro`, with a note that these map to the Spanish labels `Efectivo`/`Transferencia`/`Otro` at display time only, matching `reservations.status`'s existing stored-value/display-label split. Update the requirement's two scenarios' example values accordingly (`method = "transfer"` accepted, `method = "card"` or similar unrecognized value rejected). Run `openspec validate frontend-api-alignment --strict` afterwards — it passes today and must keep passing.
 
-- [ ] 5.2 [RED] `back/tests/test_payments.py` (extend), written **before** any of 5.3's production code exists, so that all three assertions genuinely fail: recording a payment **without** `method` → 422 (today it is silently accepted, so this fails); recording one with `method = "card"` → 422 (today accepted); recording one with `method = "transfer"` is accepted and the stored row reports `method = "transfer"` on read (today the field does not exist in the response). Run and record all three failures — if any of them passes at this point, STOP and report it rather than proceeding, because it would mean the field already exists somewhere and the rest of this phase rests on a false premise.
+  **Contradiction found, surfaced rather than silently resolved:** this task's own text, and this phase's preamble above ("Spec/design reconciliation, flagged before writing code"), both describe the spec as still naming the stored values in Spanish (`efectivo`/`transferencia`/`otro`) today. It does not. `git log` shows the correction was already made, same day, in commit `d4d1649` ("docs(alignment): task breakdown, and align the spec with the English enum") — the commit that *wrote this very task list* also corrected the spec in the same commit, but left this checkbox unticked and the preamble text stale. The spec already reads `cash`/`transfer`/`other`, already carries the Spanish-label note, and its accepted-value scenario already says `method = "transfer"`. Its rejected-value scenario uses `method = "tarjeta"` rather than `method = "card"` — read as "a similar unrecognized value" per this task's own wording (an unrecognized value is unrecognized regardless of which language it's spelled in), so left as-is rather than churned for no behavioural difference. No file edit made for this task. `openspec validate frontend-api-alignment --strict` → **valid**, both before and after confirming this (see also the same validation recorded at the end of 5.3/5.5 below).
 
-- [ ] 5.3 [GREEN] **One coherent unit — the DDL and the write path that satisfies it land together** (see Ordering rationale 1). Do the four sub-steps in this order, and run the suite only at the end:
+- [x] 5.2 [RED] `back/tests/test_payments.py` (extend), written **before** any of 5.3's production code exists, so that all three assertions genuinely fail: recording a payment **without** `method` → 422 (today it is silently accepted, so this fails); recording one with `method = "card"` → 422 (today accepted); recording one with `method = "transfer"` is accepted and the stored row reports `method = "transfer"` on read (today the field does not exist in the response). Run and record all three failures — if any of them passes at this point, STOP and report it rather than proceeding, because it would mean the field already exists somewhere and the rest of this phase rests on a false premise.
+
+  **Observed — all three genuinely failed, confirming the premise holds:**
+  ```
+  FAILED tests/test_payments.py::test_payment_without_method_is_rejected
+    assert 201 == 422
+  FAILED tests/test_payments.py::test_payment_with_unrecognized_method_is_rejected
+    assert 201 == 422
+  FAILED tests/test_payments.py::test_payment_with_transfer_method_is_accepted_and_reported_on_read
+    assert response.json().get("method") == "transfer"
+    AssertionError: assert None == 'transfer'
+  3 failed, 4 passed, 2 warnings in 4.06s
+  ```
+  No STOP condition triggered — none of the three passed prematurely.
+
+- [x] 5.3 [GREEN] **One coherent unit — the DDL and the write path that satisfies it land together** (see Ordering rationale 1). Do the four sub-steps in this order, and run the suite only at the end:
 
   **(a)** `back/migrations/versions/0003_payment_method.py` (create): `op.add_column("payments", sa.Column("payment_method", sa.String(20), nullable=False, server_default="other"))` then `op.alter_column("payments", "payment_method", server_default=None)` then `op.create_check_constraint("payments_method_valid", "payments", "payment_method IN ('cash', 'transfer', 'other')")`. **The DDL-default-then-drop sequence is required, not decoration:** `payments` is `FORCE ROW LEVEL SECURITY` with a policy predicated on `app.tenant_id` (`back/migrations/versions/0001_baseline.py`), which is unset inside a migration — an `UPDATE payments SET payment_method = 'other'` run here would silently touch **zero rows**, even though the migrator owns the table, because that is precisely what `FORCE` does. `ADD COLUMN ... DEFAULT` is DDL and is not subject to RLS at all; it fills every existing row identically whether the table is empty or populated. **Never `UPDATE` inside a migration against a `FORCE`d tenant-scoped table** — this is the general rule this task is the first exercise of, and it is the same family of hazard Phase 4 recorded: RLS denies silently, so the statement reports success and changes nothing. `downgrade()` drops the constraint then the column, and is lossy (documented, not fixed here — see design D45's Rollback section).
 
@@ -315,19 +347,72 @@ images otherwise.
 
   Re-run 5.2 → green, then run the full suite and confirm the nine payment-creating test files are green too. Record the count.
 
-- [ ] 5.4 [TEST] Run `docker compose run --rm test` — confirm the session fixture's `alembic downgrade base` → `upgrade head` cycle (design D15) exercises 0003's `upgrade()` and `downgrade()` cleanly. This check is meaningful only on an otherwise-green suite, which is why it follows 5.3 rather than the migration: a failure here is now unambiguously about the migration cycle and nothing else. Record the observed output.
+  **Deviation from this task's own literal wording, stated plainly:** sub-step (c) as written asks for both `PaymentCreate.method` AND `PaymentRead.purpose: Literal["deposit", "payment", "refund"]` (required, never null) in the same edit. `PaymentRead.purpose` is **not** added here. Adding a required field with no way to populate it would repeat, one field later, exactly the mistake this phase's own Ordering rationale exists to prevent for `payment_method`: `PaymentRead` is what `response_model=PaymentRead` serializes directly from the ORM `Payment` row returned by both routes in `back/app/api/routers/payments.py`, and no `purpose` attribute exists on that row — populating it requires `assign_purposes()` (task 5.7, not written) and the router wiring that calls it (task 5.9, not written). Adding the field now would either (a) break every payment-returning endpoint immediately (an `AttributeError`/validation error on every `GET`/`POST /payments`), or (b) require implementing 5.6–5.9 to avoid that, which this run's own scope explicitly excludes ("Do NOT start 5.6 or beyond; a separate run handles `assign_purposes()` and `purpose`"). Resolved in favor of the explicit run-scope boundary: only `PaymentCreate.method` and `PaymentRead.method` (the `payment_method` counterpart, not `purpose`) are added in 5.3(c). `purpose` is left for the 5.6–5.9 run, where the function that populates it also lands. `PaymentRead.method` needed a `validation_alias="payment_method"` (`Field(validation_alias="payment_method")`) to bridge the ORM column name to the API's `method` field name without affecting the JSON output key — undocumented in this task's text but required for `from_attributes=True` validation to find the value at all.
 
-- [ ] 5.5 [TEST] `back/tests/test_payments.py` (extend): a direct SQL `INSERT ... payment_method = 'cheque'` as `alquileres_app` raises `23514`. **Labelled `[TEST]`, not `[RED]`, deliberately** — the `payments_method_valid` CHECK lands with 5.3(a), so this test passes the moment it is written and can never have a red phase. It is still necessary: it proves the concurrency-safe database backstop exists independently of the Pydantic 422 path in 5.2, which is the whole point of the house pattern (D11). Connect as `alquileres_app`, never `alquileres_migrator`.
+  Also fixed, as part of making this GREEN rather than merely not-broken: every existing payment-creating call site across the suite needed a `method` value added now that it is required, matching the Ordering rationale's own list almost exactly. Updated: `back/tests/test_payments.py` (4 pre-existing calls), `back/tests/test_refunds.py` (5 calls), `back/tests/test_dashboard_collected.py` (1 helper), `back/tests/test_reservation_balance.py` (1 raw-SQL insert helper — `payment_method` added to the `INSERT` column list, plus one HTTP call), `back/tests/test_isolation_payments.py` (3 calls), `back/tests/test_isolation_dashboard.py` (1 call), `back/tests/test_client_reactivation.py` (1 call), `back/tests/test_public_contract.py` (1 call). **One discrepancy from the Ordering rationale's own file list, recorded rather than silently corrected:** `back/tests/test_schema_no_derived_columns.py` was named among the nine files expected to break, but its tests are pure `information_schema` column-existence checks with no payment row ever inserted (through the API or otherwise) — it could not have broken from a `NOT NULL` violation and needed no edit. It stayed green throughout, unmodified.
 
-- [ ] 5.6 [RED] `back/tests/test_payments.py` (extend): a pure, no-DB unit test for a new `assign_purposes()` function — among a list of payments, the earliest positive `paid_on` is labeled `"deposit"`, every other positive one `"payment"`, a negative-amount entry is labeled `"refund"` (or excluded from the deposit/payment labeling, per its own case); two same-`paid_on` positive payments produce a stable label across repeated calls (tie-break by `created_at`, then `id`).
+  **Observed:** 5.2 re-run → green (`docker compose run --rm test pytest tests/test_payments.py -v` → **7 passed**, later **8 passed** once 5.5's test was added). Full suite `docker compose run --rm test` → **214 passed, 3 warnings in 48.13s** (211 baseline + 3 new). `test_schema_is_migrated.py::test_no_pending_autogenerate_diff` stayed green, confirming the model and migration agree. Targeted re-run of all nine named files (eight touched + the one that needed no touch) together: `docker compose run --rm test pytest tests/test_payments.py tests/test_refunds.py tests/test_dashboard_collected.py tests/test_reservation_balance.py tests/test_isolation_payments.py tests/test_isolation_dashboard.py tests/test_client_reactivation.py tests/test_public_contract.py tests/test_schema_no_derived_columns.py -v` → **45 passed**.
 
-- [ ] 5.7 [GREEN] `back/app/services/payments.py` (create — the fourth service module, deliberately, per design D3/D42): `assign_purposes(payments: Sequence[Payment]) -> dict[uuid.UUID, str]`, ordering key `(paid_on, created_at, id)`, only positive amounts are deposit/payment candidates. Re-run 5.6 → green.
+- [x] 5.4 [TEST] Run `docker compose run --rm test` — confirm the session fixture's `alembic downgrade base` → `upgrade head` cycle (design D15) exercises 0003's `upgrade()` and `downgrade()` cleanly. This check is meaningful only on an otherwise-green suite, which is why it follows 5.3 rather than the migration: a failure here is now unambiguously about the migration cycle and nothing else. Record the observed output.
 
-- [ ] 5.8 [RED] `back/tests/test_payments.py` (extend, integration): a reservation where a payment dated `2026-03-02` is **recorded first** and a payment dated `2026-01-05` is **recorded second** — reading the payments list presents the `2026-01-05` one as `"deposit"` and the `2026-03-02` one as `"payment"` (ordering by `paid_on`, never insertion order); a reservation with one positive payment and one refund presents the refund as neither `"deposit"` nor `"payment"`.
+  **Observed** (session-fixture log, `docker compose run --rm test pytest tests/test_payments.py -x -s` filtered to the migration lines):
+  ```
+  Running downgrade 0003 -> 0002, payment method
+  Running downgrade 0002 -> 0001, tenant whatsapp
+  Running downgrade 0001 -> , baseline
+  Running upgrade  -> 0001, baseline
+  Running upgrade 0001 -> 0002, tenant whatsapp
+  Running upgrade 0002 -> 0003, payment method
+  ```
+  Both `0003.upgrade()` and `0003.downgrade()` exercised cleanly, no error, on every session — the same continuous verification D15/D46 already established for `0002`.
 
-- [ ] 5.9 [GREEN] `back/app/api/routers/payments.py`: `list_payments` labels every `PaymentRead.purpose` via `assign_purposes()` over the full ordered list; `create_payment` re-selects the reservation's payments after its existing `session.flush()` and labels the new row from the same function (one extra `SELECT` on the write path, so `purpose`'s absence never means two different things). Re-run 5.8 → green.
+- [x] 5.5 [TEST] `back/tests/test_payments.py` (extend): a direct SQL `INSERT ... payment_method = 'cheque'` as `alquileres_app` raises `23514`. **Labelled `[TEST]`, not `[RED]`, deliberately** — the `payments_method_valid` CHECK lands with 5.3(a), so this test passes the moment it is written and can never have a red phase. It is still necessary: it proves the concurrency-safe database backstop exists independently of the Pydantic 422 path in 5.2, which is the whole point of the house pattern (D11). Connect as `alquileres_app`, never `alquileres_migrator`.
 
-- [ ] 5.10 `back/tests/test_schema_no_derived_columns.py`: add `"purpose"` to `_FORBIDDEN_COLUMN_NAMES`. Run the full suite — confirm still green (no `purpose` column exists anywhere; it is Python-only, over rows already in hand).
+  **Observed:** `test_direct_insert_with_invalid_method_raises_23514` passed on first run, as this task predicts for a `[TEST]` rather than `[RED]` label — connected via `app_engine` (never `migrator_engine`), with `app.tenant_id` set to the owning tenant, inserting `payment_method = 'cheque'` directly against a real reservation created through the API. Asserted via `pytest.raises(IntegrityError)` and `exc_info.value.orig.sqlstate == "23514"`, the same diagnostic field `app/errors.py`'s dispatch table already keys on, rather than a string match on the driver's message. `docker compose run --rm test pytest tests/test_payments.py -v` → **8 passed**. Full suite `docker compose run --rm test` → **215 passed, 3 warnings in 55.88s** (211 baseline + 4 new: the three method assertions from 5.2 plus this CHECK backstop). `openspec validate frontend-api-alignment --strict` → **valid**. Tasks 5.1–5.5 are now closed (5/5); 5.6–5.10 (`assign_purposes()` and `purpose`) are explicitly out of scope for this run.
+
+- [x] 5.6 [RED] `back/tests/test_payments.py` (extend): a pure, no-DB unit test for a new `assign_purposes()` function — among a list of payments, the earliest positive `paid_on` is labeled `"deposit"`, every other positive one `"payment"`, a negative-amount entry is labeled `"refund"` (or excluded from the deposit/payment labeling, per its own case); two same-`paid_on` positive payments produce a stable label across repeated calls (tie-break by `created_at`, then `id`).
+
+  **Observed — genuine RED, a collection-level failure rather than an assertion failure, exactly as expected for a function that does not exist yet:** `docker compose run --rm test pytest tests/test_payments.py -v` → `ImportError`/`ModuleNotFoundError: No module named 'app.services.payments'` at collection time, `1 error` (the whole file fails to collect, since the new top-level `from app.services.payments import assign_purposes` import fails — the same collapse-to-collection-error shape any brand-new-module import produces). Four tests were written, not the minimum one: earliest-positive-by-`paid_on` → `deposit` with two other positive payments both → `payment`; a negative amount dated earlier than every positive payment still labeled `refund`, never `deposit`; two positive payments sharing `paid_on` tie-broken by `created_at`, asserted stable across two calls with the input list reordered; two payments sharing both `paid_on` AND `created_at` tie-broken by `id`, also asserted stable across reordering. The last two triangulate the two tie-break levels independently rather than assuming one test covers both.
+
+- [x] 5.7 [GREEN] `back/app/services/payments.py` (create — the fourth service module, deliberately, per design D3/D42): `assign_purposes(payments: Sequence[Payment]) -> dict[uuid.UUID, str]`, ordering key `(paid_on, created_at, id)`, only positive amounts are deposit/payment candidates. Re-run 5.6 → green.
+
+  **Observed:** green — `docker compose run --rm test pytest tests/test_payments.py -v` → **12 passed** (8 baseline + 4 new). Implementation sorts the input sequence by `(paid_on, created_at, id)` and walks it once, assigning `"deposit"` to the first entry with `amount > 0`, `"payment"` to every subsequent positive entry, and `"refund"` to every entry with `amount <= 0` regardless of its position in the sort — no separate handling needed for "negative dated earliest," since non-positive amounts never participate in the deposit/payment walk at all.
+
+- [x] 5.8 [RED] `back/tests/test_payments.py` (extend, integration): a reservation where a payment dated `2026-03-02` is **recorded first** and a payment dated `2026-01-05` is **recorded second** — reading the payments list presents the `2026-01-05` one as `"deposit"` and the `2026-03-02` one as `"payment"` (ordering by `paid_on`, never insertion order); a reservation with one positive payment and one refund presents the refund as neither `"deposit"` nor `"payment"`.
+
+  **Observed — both genuinely failed, `purpose` absent from every response at this point:**
+  ```
+  FAILED tests/test_payments.py::test_payments_list_labels_purpose_by_paid_on_not_recording_order
+    assert None == 'deposit'
+  FAILED tests/test_payments.py::test_payments_list_labels_refund_as_neither_deposit_nor_payment
+    assert None == 'refund'
+  2 failed, 12 passed, 2 warnings in 5.50s
+  ```
+  The refund test's first assertion (`refund_purpose not in ("deposit", "payment")`) passed vacuously against `None` — recorded honestly, since `None` is trivially "neither" — but the file failed at its second, stronger assertion (`== "refund"`), so the test as a whole still failed red for the right underlying reason: the field does not exist yet.
+
+- [x] 5.9 [GREEN] `back/app/api/routers/payments.py`: `list_payments` labels every `PaymentRead.purpose` via `assign_purposes()` over the full ordered list; `create_payment` re-selects the reservation's payments after its existing `session.flush()` and labels the new row from the same function (one extra `SELECT` on the write path, so `purpose`'s absence never means two different things). Re-run 5.8 → green.
+
+  **This task also completes the deferred half of task 5.3(c), recorded here rather than left as a silent gap:** 5.3(c)'s own text asked for both `PaymentCreate.method` and `PaymentRead.purpose` in the same edit; only `method` was added there, deliberately, because `purpose` had no way to be populated until this task's router wiring existed (adding a required field nobody can fill would have repeated, one field later, the exact mistake this phase's Ordering rationale exists to prevent for `payment_method`). `PaymentRead.purpose: Literal["deposit", "payment", "refund"]` (required, never null) is added in `back/app/schemas/payment.py` as part of this task, landing together with the router wiring that populates it — not before, per the carry-over instruction.
+
+  **Mechanism:** `Payment` has no `purpose` column and `PaymentRead.purpose` has no ORM attribute to alias from (`purpose` is a property of a row's position within its reservation's list, not of the row itself — design D42). Both routes attach `payment.purpose = <label>` as a plain dynamic Python attribute on the already-fetched ORM instance before it is serialized by `response_model=PaymentRead`'s `from_attributes=True` validation, which reads it via `getattr` the same as any mapped column. `list_payments` computes `purposes = assign_purposes(payments)` once over the whole fetched list (zero extra queries — it already selects everything). `create_payment` re-selects the reservation's payments after its existing `flush()` (`select(Payment).where(Payment.reservation_id == reservation_id)`) and looks up the new row's label from that same function call — one extra `SELECT` on the write path, exactly as specified.
+
+  **Observed:** green — `docker compose run --rm test pytest tests/test_payments.py -v` → **14 passed** (12 baseline + 2 new). Full suite `docker compose run --rm test` → **221 passed, 3 warnings** (215 baseline + 6 new: 4 in `assign_purposes`'s unit tests, 2 integration).
+
+- [x] 5.10 `back/tests/test_schema_no_derived_columns.py`: add `"purpose"` to `_FORBIDDEN_COLUMN_NAMES`. Run the full suite — confirm still green (no `purpose` column exists anywhere; it is Python-only, over rows already in hand).
+
+  **Observed:** `"purpose"` added to `_FORBIDDEN_COLUMN_NAMES` (now `("total", "completed", "balance", "purpose")`); the file's docstring extended with a short paragraph naming this task and D42, matching the existing convention of recording which task added which forbidden name. Full suite `docker compose run --rm test` → **221 passed, 3 warnings in 50.68s** — unchanged from 5.9's count, confirming no `purpose` column exists anywhere in the live schema. `openspec validate frontend-api-alignment --strict` → **valid**. Tasks 5.6–5.10 are now closed (5/5); Phase 5 is closed (10/10) and this closes the change's entire task list (53/53).
+
+  **Contradiction found in `design.md` itself, surfaced rather than silently resolved:** D41's closing line reads, verbatim, "**A refund is not a method and not a purpose.**" Read in isolation, this directly contradicts D42, two sections later in the same document, which explicitly types `purpose: Literal["deposit", "payment", "refund"]` — making `"refund"` one of exactly three legal values of the `purpose` field, not something excluded from it. It also contradicts this phase's own task text: 5.6 and 5.8 both say a negative-amount entry "is labeled `refund`," and 5.9 wires exactly that value through the router. Read in the context of D41's own paragraph, the sentence is arguing against something narrower — that a refund should not get its OWN new categorical dimension distinct from the sign-based discriminator D7 already established (i.e., don't invent a `method` value for it, and don't invent a *second, separate* "why" field beyond what `purpose` already is) — not that the string `"refund"` may never appear as a `purpose` value. But the sentence as literally written says the opposite of what D42's code and this phase's own tests do. Resolved in favor of D42's explicit `Literal` type and the task text's own repeated, explicit use of `"refund"` as the third `purpose` value — both are unambiguous code-level contracts, while D41's line is prose that reads as a slip rather than a considered reversal of a decision made two sections later in the same document.
+
+  **Orchestrator correction to that reading — D41 is NOT a slip, and its rule must not be deleted.** The resolution above (implement `"refund"` as a `purpose` value) is correct and stands. The *diagnosis* is not: the two decisions are reconcilable, and reading D41's line as an error invites a future contributor to "fix" `design.md` by removing a rule that is load-bearing.
+
+  D41's sentence is about **discriminators**, not about vocabulary. Its own next clause says so: *"The sign of `amount` remains the only payment/refund discriminator (D7); no method value duplicates it."* The rule is that nothing may become a *second, independent* way to decide whether a row is a refund — not that the word may never be rendered.
+
+  `assign_purposes()` honours that rule exactly. Read `back/app/services/payments.py`: `"refund"` is returned on `payment.amount <= 0` and on nothing else. It is not stored, not supplied by the caller, and not independently decidable — it is D7's sign, rendered. A row cannot be a refund by `purpose` while being a payment by sign, because `purpose` has no information of its own.
+
+  So both hold: D41 forbids a second discriminator, D42 names the three labels the one discriminator produces. What WOULD violate D41 is a stored `purpose` column, a caller-supplied `purpose`, or a `method` value named `refund` — and 5.10's `_FORBIDDEN_COLUMN_NAMES` tripwire exists to catch the first of those the day someone tries it.
+
+  **Leave D41's wording alone.** Its literal phrasing is loose, but the rule underneath it is the one keeping refunds from acquiring a second source of truth.
 
 ---
 
@@ -339,5 +424,5 @@ images otherwise.
 | 2 | `reservation-booking` | 15 (2.1–2.15) | No migration |
 | 3 | `client-management` | 1 (3.1) | Closed as no code (D47) — decision + tripwire recorded, no endpoint |
 | 4 | `tenant-management` / `tenant-isolation` / `public-tenant-contact` / `public-availability-calendar` | 21 (4.1–4.21) | Migration `0002`. 1 BLOCKING human-approval gate (4.1, covers D38+D39). Internal order enforced: RLS proven before the write endpoint exists |
-| 5 | `payment-tracking` | 10 (5.1–5.10) | Migration `0003`. Reordered before implementation: tests precede production code, and the DDL ships with the write path that satisfies it (see the phase's Ordering rationale). Starts with a spec-wording correction (English stored values, per design's later resolution) |
-| **Total** | | **53** | 1 BLOCKING human-approval gate |
+| 5 | `payment-tracking` | 10 (5.1–5.10) | Migration `0003`. Reordered before implementation: tests precede production code, and the DDL ships with the write path that satisfies it (see the phase's Ordering rationale). Starts with a spec-wording correction (English stored values, per design's later resolution). `assign_purposes()` and `PaymentRead.purpose` (5.6–5.10) close the phase — 10/10 |
+| **Total** | | **53** | 1 BLOCKING human-approval gate — **all 53 tasks complete, change implementation closed** |

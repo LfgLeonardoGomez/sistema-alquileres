@@ -46,7 +46,7 @@ def _create_reservation_with_payment(owner: SeededTenant) -> None:
     client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=_headers(owner),
-        json={"amount": "5000.00", "paid_on": "2026-12-06"},
+        json={"amount": "5000.00", "paid_on": "2026-12-06", "method": "cash"},
     )
 
 

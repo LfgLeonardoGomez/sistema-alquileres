@@ -11,12 +11,18 @@ Derived, Never Stored") MUST NOT exist as a column on EITHER
 `reservations` or `payments` -- it is a Pydantic `computed_field`
 (`app/schemas/reservation.py`) over `effective_total` and the
 `paid_amount` `column_property`, never a stored value on either table.
+
+Task 5.10 extends it again: `purpose` (payment-tracking spec "Payment
+Purpose Is Derived From `paid_on`, Never Stored", design D42) MUST NOT
+exist as a column either -- it is computed in Python by
+`app/services/payments.py::assign_purposes()` over rows the endpoint
+already has in hand, never a stored value.
 """
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-_FORBIDDEN_COLUMN_NAMES = ("total", "completed", "balance")
+_FORBIDDEN_COLUMN_NAMES = ("total", "completed", "balance", "purpose")
 
 
 def test_reservations_table_has_no_derived_columns(migrator_engine: Engine) -> None:

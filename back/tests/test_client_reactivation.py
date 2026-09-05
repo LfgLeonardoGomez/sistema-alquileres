@@ -111,7 +111,7 @@ def test_reservations_and_their_payments_survive_client_reactivation(
     client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=headers,
-        json={"amount": "2000.00"},
+        json={"amount": "2000.00", "method": "cash"},
     )
 
     delete_response = client.delete(f"/clients/{original_client_id}", headers=headers)

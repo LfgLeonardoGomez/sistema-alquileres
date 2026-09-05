@@ -55,7 +55,7 @@ def test_payment_post_cross_tenant_returns_404(
     response = client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=_headers(owner_b),
-        json={"amount": "1000.00"},
+        json={"amount": "1000.00", "method": "cash"},
     )
     assert response.status_code == 404
 
@@ -68,7 +68,7 @@ def test_payment_get_cross_tenant_returns_404(
     client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=_headers(owner_a),
-        json={"amount": "1000.00"},
+        json={"amount": "1000.00", "method": "cash"},
     )
 
     response = client.get(
@@ -91,7 +91,7 @@ def test_payment_post_cross_tenant_creates_no_row(
     response = client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=_headers(owner_b),
-        json={"amount": "1000.00"},
+        json={"amount": "1000.00", "method": "cash"},
     )
     assert response.status_code == 404
 

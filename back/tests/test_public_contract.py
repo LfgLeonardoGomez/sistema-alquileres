@@ -48,7 +48,7 @@ def _seed_reservation_with_private_data(owner: RegisteredOwner) -> dict:
     client.post(
         f"/reservations/{reservation['id']}/payments",
         headers=owner.headers,
-        json={"amount": "500.00", "note": _DISTINCTIVE_NOTE},
+        json={"amount": "500.00", "method": "cash", "note": _DISTINCTIVE_NOTE},
     )
     return reservation
 
