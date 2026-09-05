@@ -24,6 +24,21 @@ class ClientUpdate(BaseModel):
 
 
 class ClientRead(BaseModel):
+    """No `stay_count` and no `outstanding_balance` field exists here, no
+    endpoint returns them, and no SQL aggregate computes them -- by design
+    (D47), not by omission. A guest's outstanding balance is the plain sum
+    of that guest's reservation balances, and since a cancelled reservation
+    now reports a `balance` of `0` (D44) that sum is correct by
+    construction; `GET /reservations?client_id=` already puts the list in
+    the caller's hands.
+
+    The tripwire that reverses this: add the server-side aggregate the day
+    a second consumer of this data appears, or the day a screen renders a
+    reservation without having loaded that guest's full reservation list.
+    Until then a stored or aggregated total would be a second source of
+    truth for a number that is already derivable.
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
