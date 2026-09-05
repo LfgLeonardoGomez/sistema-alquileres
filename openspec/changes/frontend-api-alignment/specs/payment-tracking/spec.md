@@ -52,12 +52,14 @@ A cancelled reservation MUST NOT be counted toward any "estadía" (stay) count d
 
 ### Requirement: Payment Method Is A Stored Enum
 
-Each payment row MUST record how the money was received, as a `method` column constrained to exactly three values: `efectivo`, `transferencia`, `otro`. The system MUST reject a value outside this set. Unlike `paid_on`, this value MUST NOT be inferred or defaulted — only the owner knows how a given amount arrived, so it MUST be supplied explicitly when the payment is recorded.
+Each payment row MUST record how the money was received, as a `method` column constrained to exactly three values: `cash`, `transfer`, `other`. The system MUST reject a value outside this set. Unlike `paid_on`, this value MUST NOT be inferred or defaulted — only the owner knows how a given amount arrived, so it MUST be supplied explicitly when the payment is recorded.
+
+The stored values are English identifiers and the interface MUST display Spanish labels (`Efectivo`, `Transferencia`, `Otro`), the same line `reservations.status` already draws by storing `reserved` and `cancelled` while every screen shows Spanish. A stored value is an identifier; the Spanish word is a label, and labels belong to the interface.
 
 #### Scenario: A payment recorded with a valid method is accepted
 
-- WHEN a payment is recorded with `method = "transferencia"`
-- THEN the system MUST accept it, and the stored row MUST report `method = "transferencia"` on read
+- WHEN a payment is recorded with `method = "transfer"`
+- THEN the system MUST accept it, and the stored row MUST report `method = "transfer"` on read
 
 #### Scenario: An unrecognized method is rejected
 
