@@ -17,6 +17,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 
 from app.services.dates import today_ar
+from app.services.reservations import balance as _compute_balance
 from app.services.reservations import effective_total as _compute_effective_total
 from app.services.reservations import is_completed as _compute_is_completed
 
@@ -72,10 +73,16 @@ class ReservationRead(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def balance(self) -> Decimal:
-        """Design D7: derived in Python from two scalars already in hand
-        (`effective_total`, `paid_amount`) -- never a stored column (see
-        `tests/test_schema_no_derived_columns.py`)."""
-        return self.effective_total - self.paid_amount
+        """Design D7/D44: delegates to the status-aware pure function in
+        `app.services.reservations` -- never a stored column (see
+        `tests/test_schema_no_derived_columns.py`). A cancelled
+        reservation's balance is `0` regardless of `effective_total` or
+        `paid_amount`; both stay visible on the model unchanged."""
+        return _compute_balance(
+            status=self.status,
+            effective_total=self.effective_total,
+            paid_amount=self.paid_amount,
+        )
 
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -46,6 +46,19 @@ def is_completed(*, status: str, check_out: date, today: date) -> bool:
     return status == "reserved" and check_out < today
 
 
+def balance(*, status: str, effective_total: Decimal, paid_amount: Decimal) -> Decimal:
+    """Pure function (design D44): a cancelled reservation owes nothing,
+    so its balance reads `0` regardless of `effective_total` or of any
+    amount recorded in `payments` -- the payments stay individually
+    visible elsewhere (`paid_amount`, the payments list endpoint), only
+    this derived number collapses. Placed beside `is_completed`, which
+    already consults `status`; before this function existed `balance`'s
+    arithmetic ignored `status` entirely, which was the asymmetry."""
+    if status == "cancelled":
+        return Decimal(0)
+    return effective_total - paid_amount
+
+
 def create_reservation(
     session: Session,
     *,

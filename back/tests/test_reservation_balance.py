@@ -20,9 +20,47 @@ from sqlalchemy.engine import Engine
 from sqlalchemy import text
 
 from app.main import app
+from app.services.reservations import balance
 from tests.conftest import RegisteredOwner
 
 client = TestClient(app)
+
+
+# ---- unit: the pure function, no DB (Testing Strategy: "balance() returns 0
+# for cancelled at several paid amounts, and total - paid otherwise,
+# including a negative (overpaid) result") ----
+
+
+def test_balance_pure_function_cancelled_with_no_payment_is_zero() -> None:
+    assert balance(
+        status="cancelled", effective_total=Decimal("180000"), paid_amount=Decimal("0")
+    ) == Decimal("0")
+
+
+def test_balance_pure_function_cancelled_with_partial_payment_is_zero() -> None:
+    assert balance(
+        status="cancelled", effective_total=Decimal("180000"), paid_amount=Decimal("60000")
+    ) == Decimal("0")
+
+
+def test_balance_pure_function_cancelled_overpaid_is_still_zero() -> None:
+    """A cancelled reservation's balance is never negative -- it does not
+    assert the business owes money back (design D44)."""
+    assert balance(
+        status="cancelled", effective_total=Decimal("180000"), paid_amount=Decimal("200000")
+    ) == Decimal("0")
+
+
+def test_balance_pure_function_non_cancelled_is_total_minus_paid() -> None:
+    assert balance(
+        status="reserved", effective_total=Decimal("5000"), paid_amount=Decimal("2000")
+    ) == Decimal("3000")
+
+
+def test_balance_pure_function_non_cancelled_overpaid_is_negative() -> None:
+    assert balance(
+        status="reserved", effective_total=Decimal("500"), paid_amount=Decimal("800")
+    ) == Decimal("-300")
 
 
 def _unique_phone() -> str:
@@ -142,6 +180,63 @@ def test_a_refund_increases_balance_back(
     response = client.get(f"/reservations/{reservation['id']}", headers=registered_owner.headers)
     assert response.status_code == 200
     assert Decimal(str(response.json()["balance"])) == Decimal("5000.00")
+
+
+def test_cancelled_reservation_balance_is_zero_regardless_of_payments(
+    registered_owner: RegisteredOwner, migrator_engine: Engine
+) -> None:
+    """payment-tracking spec, "A cancelled reservation's balance is zero
+    regardless of payments" -- a cancelled $180.000 stay carrying a
+    $60.000 deposit must report `balance == 0`, not `120000` (design D44)."""
+    reservation = _create_reservation(registered_owner, "180000.00")
+    _insert_payment_row(
+        migrator_engine,
+        tenant_id=registered_owner.tenant_id,
+        reservation_id=reservation["id"],
+        amount="60000.00",
+    )
+
+    cancel_response = client.post(
+        f"/reservations/{reservation['id']}/cancel", headers=registered_owner.headers
+    )
+    assert cancel_response.status_code == 200
+
+    response = client.get(f"/reservations/{reservation['id']}", headers=registered_owner.headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(str(body["balance"])) == Decimal("0")
+    assert body["status"] == "cancelled"
+
+
+def test_cancelled_reservation_keeps_paid_amount_visible(
+    registered_owner: RegisteredOwner, migrator_engine: Engine
+) -> None:
+    """payment-tracking spec, "A cancelled reservation's payments remain
+    visible" -- cancellation collapses the derived `balance`, not the
+    payment history: `paid_amount` and the individual payment row stay
+    readable even though `balance` reads `0` (design D44)."""
+    reservation = _create_reservation(registered_owner, "180000.00")
+    _insert_payment_row(
+        migrator_engine,
+        tenant_id=registered_owner.tenant_id,
+        reservation_id=reservation["id"],
+        amount="60000.00",
+    )
+    client.post(f"/reservations/{reservation['id']}/cancel", headers=registered_owner.headers)
+
+    response = client.get(f"/reservations/{reservation['id']}", headers=registered_owner.headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(str(body["balance"])) == Decimal("0")
+    assert Decimal(str(body["paid_amount"])) == Decimal("60000.00")
+    assert Decimal(str(body["effective_total"])) == Decimal("180000.00")
+
+    payments_response = client.get(
+        f"/reservations/{reservation['id']}/payments", headers=registered_owner.headers
+    )
+    assert payments_response.status_code == 200
+    amounts = [Decimal(str(p["amount"])) for p in payments_response.json()]
+    assert Decimal("60000.00") in amounts
 
 
 def test_price_can_be_edited_below_the_amount_already_paid(
