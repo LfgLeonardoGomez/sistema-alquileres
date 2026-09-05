@@ -12,7 +12,11 @@ import uuid
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+# `status` is imported under an alias here, unlike the sibling routers:
+# `list_reservations` below takes a `status` query parameter, which would
+# otherwise shadow the FastAPI module for that whole function body.
+from fastapi import APIRouter, Query
+from fastapi import status as http_status
 from sqlalchemy import func, select
 
 from app import errors
@@ -24,7 +28,11 @@ from app.services.reservations import create_reservation
 router = APIRouter(tags=["reservations"])
 
 
-@router.post("/reservations", response_model=ReservationRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/reservations",
+    response_model=ReservationRead,
+    status_code=http_status.HTTP_201_CREATED,
+)
 def create_reservation_endpoint(
     payload: ReservationCreate, principal: PrincipalDep, session: TenantSessionDep
 ) -> Reservation:
