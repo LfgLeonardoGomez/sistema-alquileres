@@ -9,10 +9,11 @@ separate re-validation code is needed (reservation-booking spec
 """
 
 import uuid
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app import errors
 from app.api.deps import PrincipalDep, TenantSessionDep
@@ -43,10 +44,42 @@ def create_reservation_endpoint(
 def list_reservations(
     session: TenantSessionDep,
     property_id: Annotated[uuid.UUID | None, Query()] = None,
+    client_id: Annotated[uuid.UUID | None, Query()] = None,
+    from_: Annotated[date | None, Query(alias="from")] = None,
+    to: Annotated[date | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
 ) -> list[Reservation]:
-    stmt = select(Reservation).order_by(Reservation.created_at)
+    # FastAPI cannot express "both or neither" in the signature -- an
+    # explicit guard in the handler body (design D43).
+    if (from_ is None) != (to is None):
+        raise errors.invalid("from and to must be supplied together")
+    if from_ is not None and to is not None and from_ >= to:
+        # An inverted or zero-width window is a caller mistake, not an
+        # empty-list answer: letting `daterange()` itself raise would
+        # surface as a 500, and the house rule is that the app layer
+        # produces the error while the database stays the authority
+        # (design D43).
+        raise errors.invalid("from must be before to")
+
+    # design D43: check_in is the primary key so date-ordered lists and
+    # calendars don't sort by insertion order; created_at is the stable
+    # tie-break for two stays starting the same day.
+    stmt = select(Reservation).order_by(Reservation.check_in, Reservation.created_at)
     if property_id is not None:
         stmt = stmt.where(Reservation.property_id == property_id)
+    if client_id is not None:
+        stmt = stmt.where(Reservation.client_id == client_id)
+    if from_ is not None and to is not None:
+        # design D43: the same `daterange && daterange` expression the
+        # `reservations_no_overlap` EXCLUDE constraint uses -- never a
+        # hand-rolled `check_in < to AND check_out > from_` boundary
+        # comparison, so the filter and the constraint cannot disagree
+        # about what "overlap" means.
+        stay = func.daterange(Reservation.check_in, Reservation.check_out, "[)")
+        window = func.daterange(from_, to, "[)")
+        stmt = stmt.where(stay.op("&&")(window))
+    if status is not None:
+        stmt = stmt.where(Reservation.status == status)
     return list(session.execute(stmt).scalars().all())
 
 

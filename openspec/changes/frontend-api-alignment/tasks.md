@@ -59,21 +59,65 @@ images otherwise.
 
 ## Phase 2: Reservation List Filters (`reservation-booking`) — no migration
 
-- [ ] 2.1 [RED] `back/tests/test_reservation_filters.py` (create): `GET /reservations?client_id=<id>` returns exactly that client's reservations and none of another client's; a reservation on a since-soft-deleted property still appears for its client.
-- [ ] 2.2 [GREEN] `back/app/api/routers/reservations.py`: add an optional `client_id: Annotated[uuid.UUID | None, Query()]` filter to `list_reservations`. Re-run 2.1 → green.
-- [ ] 2.3 [RED] same file: a reservation with `check_in = 2026-08-28`, `check_out = 2026-09-03` **is** returned by `?from=2026-09-01&to=2026-10-01` (overlap, not containment); a reservation entirely outside that window is excluded.
-- [ ] 2.4 [GREEN] `back/app/api/routers/reservations.py`: add optional `from_: Annotated[date, Query(alias="from")]` and `to: Annotated[date, Query()]`. Filter via `func.daterange(Reservation.check_in, Reservation.check_out, "[)").op("&&")(func.daterange(from_, to, "[)"))` — the same expression `reservations_no_overlap` uses (design D43), never a hand-rolled `check_in < to AND check_out > from_` boundary comparison. Re-run 2.3 → green.
-- [ ] 2.5 [RED] same file: supplying only `from`, or only `to`, is rejected with a validation error (422).
-- [ ] 2.6 [GREEN] `back/app/api/routers/reservations.py`: FastAPI cannot express "both or neither" in the signature — add an explicit guard in the handler body raising `errors.invalid("from and to must be supplied together")` when exactly one of `from_`/`to` is present. Re-run 2.5 → green.
-- [ ] 2.7 [RED] same file: `from >= to` is rejected with a validation error (422) rather than silently returning an empty list.
-- [ ] 2.8 [GREEN] `back/app/api/routers/reservations.py`: add a guard raising `errors.invalid("from must be before to")` when both are present and `from_ >= to`. Re-run 2.7 → green.
-- [ ] 2.9 [TEST] same file: supplying neither `from`/`to` nor `client_id` returns the same list the endpoint returned before this change (structure only — the ordering assertion is 2.14/2.15, not this task).
-- [ ] 2.10 [RED] same file: a client with one reservation inside the requested window and one outside it — `?client_id=<id>&from=2026-09-01&to=2026-10-01` — returns only the reservation that overlaps.
-- [ ] 2.11 [GREEN] confirmed by construction (2.2's and 2.4's `.where()` clauses AND together on the same `stmt`). Re-run 2.10 → green.
-- [ ] 2.12 [RED] same file: `?status=reserved` excludes a cancelled reservation from the list; omitting `status` leaves the existing (cancelled-inclusive) default unchanged (design D43 / Open Question 3: decided here, not a silent default change).
-- [ ] 2.13 [GREEN] `back/app/api/routers/reservations.py`: add an optional `status: Annotated[str | None, Query()]` filter. Re-run 2.12 → green.
-- [ ] 2.14 [RED] same file: default ordering is `check_in, created_at` — two reservations with the same `check_in` keep a stable order by `created_at`, and a reservation with an earlier `check_in` but a later `created_at` sorts first (proves the primary key changed, not just a secondary tie-break).
-- [ ] 2.15 [GREEN] `back/app/api/routers/reservations.py`: change `list_reservations`'s `order_by(Reservation.created_at)` to `order_by(Reservation.check_in, Reservation.created_at)`. Re-run 2.14 → green.
+- [x] 2.1 [RED] `back/tests/test_reservation_filters.py` (create): `GET /reservations?client_id=<id>` returns exactly that client's reservations and none of another client's; a reservation on a since-soft-deleted property still appears for its client.
+
+  **Observed:** `back/tests/test_reservation_filters.py` created with the full Phase 2 test set (13 tests) up front, then run once against the unmodified router to confirm RED before any production code changed: `9 failed, 4 passed`. The 4 that passed without any filter existing were `test_client_reservation_on_soft_deleted_property_still_appears`, `test_straddling_stay_is_returned_by_overlap_window`, `test_no_filters_returns_the_unfiltered_list`, `test_omitting_status_keeps_the_cancelled_inclusive_default` — each passes trivially pre-implementation because an absent filter returns everything, which happens to satisfy an inclusion assertion (not a false-positive risk, since their paired exclusion tests — soft-delete's own client scoping via 2.1's other case, the outside-window case, and the status-exclusion case — did fail red). `test_filter_by_client_id_returns_only_that_clients_reservations` itself failed as expected (both clients' reservations returned, unfiltered).
+
+- [x] 2.2 [GREEN] `back/app/api/routers/reservations.py`: add an optional `client_id: Annotated[uuid.UUID | None, Query()]` filter to `list_reservations`. Re-run 2.1 → green.
+
+  **Observed:** green — `test_filter_by_client_id_returns_only_that_clients_reservations` and `test_client_reservation_on_soft_deleted_property_still_appears` both pass with the `client_id` filter added.
+
+- [x] 2.3 [RED] same file: a reservation with `check_in = 2026-08-28`, `check_out = 2026-09-03` **is** returned by `?from=2026-09-01&to=2026-10-01` (overlap, not containment); a reservation entirely outside that window is excluded.
+
+  **Observed:** already covered by 2.1's up-front batch. `test_stay_entirely_outside_window_is_excluded` failed red (no filter yet, outside-window reservation still appeared); `test_straddling_stay_is_returned_by_overlap_window` passed trivially pre-implementation for the reason recorded in 2.1.
+
+- [x] 2.4 [GREEN] `back/app/api/routers/reservations.py`: add optional `from_: Annotated[date, Query(alias="from")]` and `to: Annotated[date, Query()]`. Filter via `func.daterange(Reservation.check_in, Reservation.check_out, "[)").op("&&")(func.daterange(from_, to, "[)"))` — the same expression `reservations_no_overlap` uses (design D43), never a hand-rolled `check_in < to AND check_out > from_` boundary comparison. Re-run 2.3 → green.
+
+  **Observed:** green — both `test_straddling_stay_is_returned_by_overlap_window` and `test_stay_entirely_outside_window_is_excluded` pass with the `daterange && daterange` filter added, expression copied character-for-character from the `reservations_no_overlap` EXCLUDE constraint per design D43.
+
+- [x] 2.5 [RED] same file: supplying only `from`, or only `to`, is rejected with a validation error (422).
+
+  **Observed:** already covered by 2.1's up-front batch — `test_only_from_is_rejected` and `test_only_to_is_rejected` both failed red (no guard yet, FastAPI silently ignores the lone parameter and returns 200).
+
+- [x] 2.6 [GREEN] `back/app/api/routers/reservations.py`: FastAPI cannot express "both or neither" in the signature — add an explicit guard in the handler body raising `errors.invalid("from and to must be supplied together")` when exactly one of `from_`/`to` is present. Re-run 2.5 → green.
+
+  **Observed:** green — both tests pass with the `(from_ is None) != (to is None)` guard raising 422.
+
+- [x] 2.7 [RED] same file: `from >= to` is rejected with a validation error (422) rather than silently returning an empty list.
+
+  **Observed:** already covered by 2.1's up-front batch — `test_from_after_to_is_rejected` and `test_from_equal_to_is_rejected` (the zero-width case) both failed red.
+
+- [x] 2.8 [GREEN] `back/app/api/routers/reservations.py`: add a guard raising `errors.invalid("from must be before to")` when both are present and `from_ >= to`. Re-run 2.7 → green.
+
+  **Observed:** green — both the inverted-range and zero-width-window cases pass with the `from_ >= to` guard raising 422.
+
+- [x] 2.9 [TEST] same file: supplying neither `from`/`to` nor `client_id` returns the same list the endpoint returned before this change (structure only — the ordering assertion is 2.14/2.15, not this task).
+
+  **Observed:** `test_no_filters_returns_the_unfiltered_list` passed on the first run with no code change, exactly as expected for a `[TEST]` task with no paired `[GREEN]` — the reservation created in the test is present in the unfiltered response both before and after every later task in this phase.
+
+- [x] 2.10 [RED] same file: a client with one reservation inside the requested window and one outside it — `?client_id=<id>&from=2026-09-01&to=2026-10-01` — returns only the reservation that overlaps.
+
+  **Observed:** already covered by 2.1's up-front batch — `test_client_id_combines_with_window_by_and` failed red before 2.2/2.4 landed (neither filter existed, both reservations returned).
+
+- [x] 2.11 [GREEN] confirmed by construction (2.2's and 2.4's `.where()` clauses AND together on the same `stmt`). Re-run 2.10 → green.
+
+  **Observed:** confirmed by construction as written — no additional code beyond 2.2 and 2.4's own `.where()` calls. `test_client_id_combines_with_window_by_and` passed once both filters existed, with no further edit.
+
+- [x] 2.12 [RED] same file: `?status=reserved` excludes a cancelled reservation from the list; omitting `status` leaves the existing (cancelled-inclusive) default unchanged (design D43 / Open Question 3: decided here, not a silent default change).
+
+  **Observed:** already covered by 2.1's up-front batch — `test_status_filter_excludes_cancelled` failed red (no `status` filter yet, cancelled reservation still returned); `test_omitting_status_keeps_the_cancelled_inclusive_default` passed both before and after, by design (the default must not change).
+
+- [x] 2.13 [GREEN] `back/app/api/routers/reservations.py`: add an optional `status: Annotated[str | None, Query()]` filter. Re-run 2.12 → green.
+
+  **Observed:** green — `test_status_filter_excludes_cancelled` now passes; `test_omitting_status_keeps_the_cancelled_inclusive_default` stays green, confirming the default did not silently change.
+
+- [x] 2.14 [RED] same file: default ordering is `check_in, created_at` — two reservations with the same `check_in` keep a stable order by `created_at`, and a reservation with an earlier `check_in` but a later `created_at` sorts first (proves the primary key changed, not just a secondary tie-break).
+
+  **Observed:** already covered by 2.1's up-front batch — `test_default_ordering_is_by_check_in_then_created_at` failed red against the unmodified `order_by(Reservation.created_at)` (the later-`check_in`-but-recorded-first reservation sorted first, the opposite of the expected order). The three reservations exercising this are deliberately placed on three different properties to avoid colliding with `reservations_no_overlap`, since two of them deliberately share the same `check_in`.
+
+- [x] 2.15 [GREEN] `back/app/api/routers/reservations.py`: change `list_reservations`'s `order_by(Reservation.created_at)` to `order_by(Reservation.check_in, Reservation.created_at)`. Re-run 2.14 → green.
+
+  **Observed:** green. Full suite `docker compose run --rm test` → **188 passed, 3 warnings in 71.62s** (175 baseline + 13 new tests in `test_reservation_filters.py`). Targeted re-run of the full new file → **13 passed in 5.96s**.
 
 ## Phase 3: Per-Guest Aggregates — closed as no code (`client-management`)
 
