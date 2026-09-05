@@ -161,23 +161,58 @@ and Phase 1 is where strict RED → GREEN → TRIANGULATE begins in earnest.
 > no auth, no money, and no wizard, so the hardest artifact (the month
 > geometry) is forced into existence under the simplest rendering rules.
 
-- [ ] 2.1 [RED] `front/src/shared/calendar/monthGrid.test.ts`: September 2026 (starts Tuesday) produces a first row with one leading blank then Tue 1–Sun 6; a month ending mid-week (Sept 30, Wednesday) produces trailing blanks; the grid always has six rows (D28 — height must not jump when paging).
-- [ ] 2.2 [GREEN] `front/src/shared/calendar/monthGrid.ts`: pure function, `{year, month} → DayCell[][]`, Monday-first, always six rows.
-- [ ] 2.3 [RED][TRIANGULATE] same file: a 28-day February and a 31-day month both produce six rows with correctly placed blanks.
-- [ ] 2.4 [GREEN] confirmed by 2.2 if general; else generalize. Re-run 2.3 → green.
-- [ ] 2.5 [RED] `front/src/shared/calendar/segments.test.ts`: a stay `2026-09-03`→`2026-09-07` produces `start`/`middle`/`middle`/`end` on the four occupied nights; `09-07` itself carries no segment (half-open).
-- [ ] 2.6 [GREEN] `front/src/shared/calendar/segments.ts`: segmentation over `{start, end, key}` and a `YearMonth`.
-- [ ] 2.7 [RED][TRIANGULATE] same file: a single-night stay produces one `single` segment.
-- [ ] 2.8 [GREEN] confirmed by 2.6 if general; else extend. Re-run 2.7 → green.
-- [ ] 2.9 [RED][TRAP] same file: Stay A `check_out = 2026-09-12` and Stay B `check_in = 2026-09-12` render **two half-segments** (closing A, opening B) on that day — never a single merged segment or a conflict marker. This is the adjacency rule the design names as the change's central subtlety.
-- [ ] 2.10 [GREEN] `segments.ts`: a day carrying both an outgoing `end` and an incoming `start` splits into two half-segments. Re-run 2.9 → green.
-- [ ] 2.11 [RED][TRAP] same file: a stay `2026-08-28`→`2026-09-03` computed independently for August and September shows the stay present in **both** (Aug 28–31; Sep 1–2), never absent or truncated to zero in either.
-- [ ] 2.12 [GREEN] confirmed by 2.6/2.10's per-month independence if built that way from the start; else adjust boundary handling. Re-run 2.11 → green.
-- [ ] 2.13 [RED] `front/src/shared/calendar/intersectOccupancy.test.ts` (D28's `Las dos` trap): cabin A occupied and cabin B free on the same night → `intersectOccupancy([rangesA, rangesB])` reports that night **free** (intersection, not union — the naive union would wrongly turn away a booking).
-- [ ] 2.14 [GREEN] `front/src/shared/calendar/intersectOccupancy.ts`: a night is occupied only when every input range list covers it.
-- [ ] 2.15 [RED][TRIANGULATE] same file: both cabins occupied on a night → occupied; both free → free.
-- [ ] 2.16 [GREEN] confirmed by 2.14 if general. Re-run 2.15 → green.
-- [ ] 2.17 [TEST] `front/src/shared/calendar/` module-import scan: the shared calendar module imports no reservation/client/guest/cabin/auth type from either tree. **Labelled `[TEST]`:** the module was built domain-free from 2.2 onward; this cannot fail unless a domain import is added later.
+- [x] 2.1 [RED] `front/src/shared/calendar/monthGrid.test.ts`: September 2026 (starts Tuesday) produces a first row with one leading blank then Tue 1–Sun 6; a month ending mid-week (Sept 30, Wednesday) produces trailing blanks; the grid always has six rows (D28 — height must not jump when paging).
+- [x] 2.2 [GREEN] `front/src/shared/calendar/monthGrid.ts`: pure function, `{year, month} → DayCell[][]`, Monday-first, always six rows.
+- [x] 2.3 [RED][TRIANGULATE] same file: a 28-day February and a 31-day month both produce six rows with correctly placed blanks.
+- [x] 2.4 [GREEN] confirmed by 2.2 if general; else generalize. Re-run 2.3 → green.
+- [x] 2.5 [RED] `front/src/shared/calendar/segments.test.ts`: a stay `2026-09-03`→`2026-09-07` produces `start`/`middle`/`middle`/`end` on the four occupied nights; `09-07` itself carries no segment (half-open).
+- [x] 2.6 [GREEN] `front/src/shared/calendar/segments.ts`: segmentation over `{start, end, key}` and a `YearMonth`.
+- [x] 2.7 [RED][TRIANGULATE] same file: a single-night stay produces one `single` segment.
+- [x] 2.8 [GREEN] confirmed by 2.6 if general; else extend. Re-run 2.7 → green.
+- [x] 2.9 [RED][TRAP] same file: Stay A `check_out = 2026-09-12` and Stay B `check_in = 2026-09-12` render **two half-segments** (closing A, opening B) on that day — never a single merged segment or a conflict marker. This is the adjacency rule the design names as the change's central subtlety.
+- [x] 2.10 [GREEN] `segments.ts`: a day carrying both an outgoing `end` and an incoming `start` splits into two half-segments. Re-run 2.9 → green.
+- [x] 2.11 [RED][TRAP] same file: a stay `2026-08-28`→`2026-09-03` computed independently for August and September shows the stay present in **both** (Aug 28–31; Sep 1–2), never absent or truncated to zero in either.
+- [x] 2.12 [GREEN] confirmed by 2.6/2.10's per-month independence if built that way from the start; else adjust boundary handling. Re-run 2.11 → green.
+- [x] 2.13 [RED] `front/src/shared/calendar/intersectOccupancy.test.ts` (D28's `Las dos` trap): cabin A occupied and cabin B free on the same night → `intersectOccupancy([rangesA, rangesB])` reports that night **free** (intersection, not union — the naive union would wrongly turn away a booking).
+- [x] 2.14 [GREEN] `front/src/shared/calendar/intersectOccupancy.ts`: a night is occupied only when every input range list covers it.
+- [x] 2.15 [RED][TRIANGULATE] same file: both cabins occupied on a night → occupied; both free → free.
+- [x] 2.16 [GREEN] confirmed by 2.14 if general. Re-run 2.15 → green.
+- [x] 2.17 [TEST] `front/src/shared/calendar/` module-import scan: the shared calendar module imports no reservation/client/guest/cabin/auth type from either tree. **Labelled `[TEST]`:** the module was built domain-free from 2.2 onward; this cannot fail unless a domain import is added later.
+
+  **Provenance note for 2.1-2.17, recorded because it affects how much this
+  evidence is worth.** The implementing agent was cut off by an API rate
+  limit at the moment it began its own verification pass, so it never wrote
+  per-task `Observed:` notes and never reported its RED output. Those
+  observations are therefore NOT available and are deliberately not
+  reconstructed here -- writing them after the fact from the finished code
+  would be inventing evidence, which is the one thing this task list refuses
+  to do anywhere else.
+
+  What IS verified, independently by the orchestrator against the finished
+  tree rather than taken from any agent's report:
+
+  - Full suite green: 48 files, 156 tests, up from the 117 baseline, across
+    all three TZ projects. `npx tsc -b --force` clean. `npx eslint .` clean.
+  - **Trap 2.9/2.10 (adjacency)** present and asserted: `[TRAP] splits a
+    shared checkout/check-in day into two half-segments, never a merge or a
+    conflict`.
+  - **Trap 2.11/2.12 (month-crossing)** present and asserted: `[TRAP] a
+    month-crossing stay appears in both months, never absent or truncated`.
+  - **Trap 2.13/2.14 (the expensive one)** present and asserted:
+    `reports a night FREE when only one of two cabins is occupied --
+    intersection, not union`, expecting `false`. This is the one that would
+    silently turn away bookings the owner could have taken.
+  - **Guard 2.17 proven to fire, not merely to pass.** A real domain import
+    (`../../app/reservations/types`) was injected into `monthGrid.ts`; the
+    scan failed with `offenders: [{ path: './monthGrid.ts' }]`. The file was
+    then restored and `git diff` confirmed byte-identical. The scan also
+    carries its own non-tautology test proving its extractor sees a
+    forbidden specifier.
+
+  The end state is sound and the traps are pinned. What is missing is the
+  cycle-by-cycle record for these seventeen tasks, and that gap is stated
+  here rather than papered over.
+
 - [ ] 2.18 [RED] `front/src/public/api.test.ts` (MSW): a request from this module carries no `Authorization` header, even with a valid token in `localStorage` from a concurrent authenticated session — module absent, fails.
 - [ ] 2.19 [GREEN] `front/src/public/api.ts` (create): its own fetch; no token parameter exists in its signature at all — structurally, not by convention. Re-run 2.18 → green.
 - [ ] 2.20 [RED] `front/src/public/AvailabilityPage.test.tsx` (RTL+MSW): the first request on mount includes both `from` and `to`; navigating to October re-issues a request with October's window.
