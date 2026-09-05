@@ -7,7 +7,7 @@
 > shorter document and a worse component.
 >
 > **Scope note.** The design handoff
-> (`Diseño de app con paletas de color/design_handoff_alquileres_aya/README.md`)
+> (`docs/design-handoff/README.md`, versioned in this repo)
 > is **settled input**. Colours, type, radii, spacing, wording and screen layout
 > are final and are not this proposal's to revisit. This proposal decides **what
 > gets built, in what order, and where the risk is.**
