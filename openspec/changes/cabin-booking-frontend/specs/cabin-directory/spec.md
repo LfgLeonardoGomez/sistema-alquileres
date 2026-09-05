@@ -6,7 +6,7 @@ Screen 08: two cabins, add, rename, deactivate. Nothing is ever deleted, and
 because a cabin's name is always resolved live rather than snapshotted onto
 a reservation, renaming propagates everywhere the name is shown.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Cabins Are Never Deleted, Only Deactivated
 
@@ -50,10 +50,7 @@ no request MUST be sent.
 
 ### Requirement: Renaming Propagates Everywhere The Name Is Shown, Without Migrating History
 
-Because guest and cabin names are always resolved live from the cabin lookup
-rather than stored on the reservation, renaming a cabin MUST update its
-displayed name on every surface that shows it, including past reservations'
-detail views, without any data migration step.
+Because guest and cabin names are always resolved live from the cabin lookup rather than stored on the reservation, renaming a cabin MUST update its displayed name on every surface that shows it, including past reservations' detail views, without any data migration step.
 
 #### Scenario: A renamed cabin's new name appears on a past reservation
 

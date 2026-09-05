@@ -6,7 +6,7 @@ Screen 02: the deliberately empty home screen — one occupancy figure and one
 action. `GET /dashboard/summary` returns `collected`; this screen must not
 render it, overriding the original brief's "how much she collected".
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: No Revenue Figure Is Ever Rendered
 
@@ -22,9 +22,7 @@ for occupancy.
 
 ### Requirement: Occupied-Nights Progress Reflects The Argentina-Time Month
 
-The "Noches ocupadas" card's numerator, denominator, and progress-bar
-fraction MUST reflect the month containing "today" as computed in
-`America/Argentina/Buenos_Aires`, not the UTC month.
+The "Noches ocupadas" card's numerator, denominator, and progress-bar fraction MUST reflect the month containing "today" as computed in `America/Argentina/Buenos_Aires`, not the UTC month.
 
 #### Scenario: Near a UTC month rollover, the AR month is still shown
 

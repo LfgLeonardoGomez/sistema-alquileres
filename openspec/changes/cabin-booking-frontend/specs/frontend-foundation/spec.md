@@ -9,7 +9,7 @@ client through which every request passes, the split between server state
 without connectivity fails rather than queues. This capability ships no
 screen; it is the substrate the screens are built on.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: An Enforced Import Boundary Separates The Two Route Trees
 
@@ -65,10 +65,7 @@ unstructured exception surfacing raw response text to component code.
 
 ### Requirement: Server State Lives Only In The Query Cache
 
-Properties, clients, reservations, payments, dashboard data, and public
-availability data MUST be read and cached exclusively through the query
-layer. No client-side store MAY hold a second copy of any such list or
-record.
+Properties, clients, reservations, payments, dashboard data, and public availability data MUST be read and cached exclusively through the query layer. No client-side store MAY hold a second copy of any such list or record.
 
 #### Scenario: No store mirrors a server list
 
@@ -102,11 +99,7 @@ from and written to the URL's search parameters, never a client-side store.
 
 ### Requirement: A Write Without Connectivity Fails Visibly And Is Never Queued
 
-When a mutating request (creating or editing a reservation, recording a
-payment or refund, cancelling a reservation, creating or editing a guest or
-cabin) cannot reach the network, the system MUST show the owner a message
-that the action could not be saved, in the project's plain Spanish register,
-and MUST NOT queue the write for automatic retry once connectivity returns.
+When a mutating request (creating or editing a reservation, recording a payment or refund, cancelling a reservation, creating or editing a guest or cabin) cannot reach the network, the system MUST show the owner a message that the action could not be saved, in the project's plain Spanish register, and MUST NOT queue the write for automatic retry once connectivity returns.
 
 #### Scenario: A mutation attempted offline is not queued
 

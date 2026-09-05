@@ -13,7 +13,7 @@ import from both the authenticated and the public route trees, which is the
 structural precondition the privacy boundary in `public-availability-page`
 depends on.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Monday-First Month Grid With Leading And Trailing Blanks
 
@@ -57,13 +57,7 @@ occupied night are the same day.
 
 ### Requirement: Adjacency Splits Into Two Half-Segments, Never A Conflict
 
-When one stay's `check_out` and another stay's `check_in` fall on the same
-calendar day, the system MUST render that day as two independent half
-segments — a closing half for the outgoing stay and an opening half for the
-incoming stay — and MUST NOT collapse it into a single segment, a merged
-color, or any form of conflict indicator. Two stays sharing an adjacency day
-MUST also receive different color slots (see the color-slot requirement
-below), or the half-split is present in geometry but invisible in color.
+When one stay's `check_out` and another stay's `check_in` fall on the same calendar day, the system MUST render that day as two independent half segments — a closing half for the outgoing stay and an opening half for the incoming stay — and MUST NOT collapse it into a single segment, a merged color, or any form of conflict indicator. Two stays sharing an adjacency day MUST also receive different color slots (see the color-slot requirement below), or the half-split is present in geometry but invisible in color.
 
 #### Scenario: A shared checkout/check-in day renders two half-segments
 

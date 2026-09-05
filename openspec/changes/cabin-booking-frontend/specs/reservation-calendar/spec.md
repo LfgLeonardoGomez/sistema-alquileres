@@ -8,7 +8,7 @@ list below it. This is a read-only surface — no interaction moves a
 reservation from here — and the first place client-side name resolution is
 required, since `ReservationRead` carries no guest or cabin name.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: One Cabin Is Selected At A Time, As URL State
 
@@ -66,10 +66,10 @@ guest's or cabin's stays still render a name rather than a blank.
 
 ### Requirement: An Empty Month Shows An Instructive State, Not A Blank List
 
-When no non-cancelled reservation overlaps the displayed month for the
-selected cabin, the system MUST show the exact copy "Todavía no anotaste
-ninguna reserva en este mes" together with the primary action to record one,
-rather than an empty list with no explanation.
+The system MUST show the exact copy "Todavía no anotaste ninguna reserva
+en este mes", together with the primary action to record one, when no
+non-cancelled reservation overlaps the displayed month for the selected
+cabin. It MUST NOT render an empty list with no explanation.
 
 #### Scenario: A month with zero stays shows the instructive copy
 

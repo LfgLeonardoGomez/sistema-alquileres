@@ -8,7 +8,7 @@ across app opens, and what happens to the owner's in-progress work when an
 8-hour, non-renewable token expires mid-use. Registration and password reset
 are out of scope — one account already exists, and reset is deferred.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Login Requires Only Email And Password
 
@@ -86,9 +86,7 @@ to enter again.
 
 ### Requirement: The Reservation Wizard Draft Survives A 401 Mid-Wizard
 
-A 401 occurring while the owner is on any step of the new-reservation wizard
-MUST NOT discard her in-progress draft. After signing back in, she MUST
-resume on the same wizard step with her prior selections intact.
+A 401 occurring while the owner is on any step of the new-reservation wizard MUST NOT discard her in-progress draft. After signing back in, she MUST resume on the same wizard step with her prior selections intact.
 
 #### Scenario: Signing back in resumes the wizard where it left off
 

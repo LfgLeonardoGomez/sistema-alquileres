@@ -8,7 +8,7 @@ availability is shown before dates are ever requested — an overlapping
 selection must be unreachable, never an error returned after the fact — and
 that a stay's price is entered exactly one way, never both.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Wizard State Persists Across Steps And Back Navigation
 

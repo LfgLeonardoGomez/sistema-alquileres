@@ -8,14 +8,11 @@ boundary the backend enforces (`public-availability-calendar`) a second
 time, in the client, on a route tree that cannot import an authenticated
 module and never sends an `Authorization` header.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: No Request From This Page Ever Carries An Authorization Header
 
-Every request issued from a page under `/disponibilidad/{slug}`, including
-the availability fetch, MUST carry no `Authorization` header — even when a
-valid token exists in storage from a concurrent authenticated session in the
-same browser.
+Every request issued from a page under `/disponibilidad/{slug}`, including the availability fetch, MUST carry no `Authorization` header — even when a valid token exists in storage from a concurrent authenticated session in the same browser.
 
 #### Scenario: A logged-in owner's token is not attached to the public fetch
 
@@ -37,9 +34,7 @@ when such data exists for the tenant behind the requested slug.
 
 ### Requirement: The Availability Request Always Supplies An Explicit Window
 
-Because `GET /public/{slug}/availability` has no default `from`/`to`, the
-page MUST always compute and send an explicit window matching what it is
-about to render, both on initial load and on every month navigation.
+Because `GET /public/{slug}/availability` has no default `from`/`to`, the page MUST always compute and send an explicit window matching what it is about to render, both on initial load and on every month navigation.
 
 #### Scenario: Initial load always includes both window parameters
 

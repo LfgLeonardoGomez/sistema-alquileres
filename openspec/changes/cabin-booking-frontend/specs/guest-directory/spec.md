@@ -6,7 +6,7 @@ Screens 09 and 10 plus add/edit: guests keyed by phone number, deactivated
 guests visible by design rather than hidden, and a per-guest stay history and
 balance computed client-side, since no per-guest aggregate endpoint exists.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Guests Are Keyed By Phone; An Existing Number Never Duplicates
 

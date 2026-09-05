@@ -9,7 +9,7 @@ integers, never an instant, and must never be constructed into a `Date` and
 rendered through a timezone — the exact bug that turns `2026-09-03` into
 "2/9" in Argentina and produces a wrong ledger rather than a visible error.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: No Forbidden Word Or Technical Term Reaches Rendered Copy
 
@@ -113,9 +113,7 @@ MUST NOT compute it from the browser's local timezone or from UTC.
 
 ### Requirement: The Week Starts Monday On Every Calendar Surface
 
-Every rendered month grid — private calendar, date picker, and public
-calendar — MUST show its weekday header in the order `L M M J V S D`, Monday
-first.
+Every rendered month grid — private calendar, date picker, and public calendar — MUST show its weekday header in the order `L M M J V S D`, Monday first.
 
 #### Scenario: All three calendar surfaces share the same weekday order
 

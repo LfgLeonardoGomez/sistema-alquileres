@@ -9,7 +9,7 @@ a saved reservation's dates and price. Editing is in scope by the owner's
 decision after the proposal, bounded by `ReservationUpdate` to dates and
 price only.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Balance Reads As A Normal State In Either Direction
 
@@ -26,10 +26,17 @@ error-adjacent language.
 
 ### Requirement: A Cancelled Reservation Shows No Amount Owed
 
-Regardless of what balance the API reports for a cancelled reservation (a
-known backend defect that `frontend-api-alignment` will fix), the system
-MUST render no "Debe", "Le falta pagar", or "Le tenés que devolver" line
-anywhere for a cancelled reservation.
+The system MUST render no "Debe", "Le falta pagar", or "Le tenés que
+devolver" line anywhere for a cancelled reservation, regardless of what
+balance the API reports for it.
+
+The backend now reports `0` for a cancelled reservation's balance
+(`frontend-api-alignment`, archived 2026-09-05 — the status-aware `balance`
+in `back/app/services/reservations.py`), so this requirement is no longer
+compensating for a live defect. It stands anyway, and MUST NOT be dropped
+as redundant: the frontend's correctness here MUST NOT depend on the
+backend's, or a future regression in one becomes a wrong number shown to
+the owner about her own money with nothing in between.
 
 #### Scenario: A cancelled reservation with a nonzero reported balance shows nothing owed
 
