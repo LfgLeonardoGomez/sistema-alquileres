@@ -495,3 +495,24 @@ Both downgrades are exercised on every test run by D15's `downgrade base` → `u
 - `/public/{slug}/availability` silently returns `[]` for an inverted window while the new reservation filter returns 422 (D43). A pre-existing inconsistency, noted rather than fixed, because fixing it means touching the availability route.
 - `app/services/payments.py` is the fourth service module, against D3's stated reservation of `services/` for three (D42). Added deliberately and recorded so it reads as a decision rather than drift.
 - The public contact route performs a second lookup of `tenants` by slug after `PublicSessionDep` has already resolved it (D40). Accepted: widening a shared dependency to carry tenant columns is how a contact field ends up somewhere it was not meant to be.
+
+---
+
+## Owner decisions (2026-09-04)
+
+**Open question 2 — RESOLVED.** Payment method values are stored in English
+(`cash`, `transfer`, `other`) and displayed in Spanish (`Efectivo`,
+`Transferencia`, `Otro`). This follows the line `reservations.status` already
+draws: the database stores `reserved` and `cancelled` while every screen shows
+Spanish. The stored value is an identifier; the Spanish word is a label, and
+labels belong to the interface.
+
+**Open question 3 — the design's dissent is ACCEPTED.** Two revisions, not
+one. The rollback asymmetry is the argument: dropping `whatsapp` costs a phone
+number retyped in seconds, while dropping `payment_method` destroys data the
+owner entered that exists nowhere else. A cheap rollback must not be chained
+to an expensive one.
+
+**Still blocking implementation**: D38 and D39 are CRITICAL domain — they
+change the RLS state of the table every login reads and add the first write to
+it — and are not approved by any document.
