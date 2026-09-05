@@ -25,6 +25,19 @@ export default tseslint.config(
     },
     settings: {
       react: { version: 'detect' },
+      // Discovered running task 1.28's fixtures: `import/no-restricted-paths`
+      // (0.5) silently never fired, on ANY import, because
+      // `eslint-import-resolver-node`'s default extensions
+      // (`.mjs .js .json .node`) don't include `.ts`/`.tsx`, so every
+      // extensionless relative import in this project failed to resolve
+      // and the rule skipped its check rather than erroring. The D25/D31
+      // import boundary was therefore unenforced by lint from 0.5 onward,
+      // not merely untested -- confirmed with `DEBUG=eslint-plugin-import:*`
+      // showing a `MODULE_NOT_FOUND` on a deliberately-violating fixture
+      // that produced zero lint errors.
+      'import/resolver': {
+        node: { extensions: ['.js', '.jsx', '.ts', '.tsx'] },
+      },
     },
     rules: {
       // D25 -- the public/authenticated import boundary is structural, not
