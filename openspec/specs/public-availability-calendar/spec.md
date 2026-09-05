@@ -23,10 +23,11 @@ The system MUST expose `GET /public/{tenant_slug}/availability` without requirin
 
 ### Requirement: The Window Is Caller-Supplied and Mandatory
 
-The endpoint takes `from` and `to` query parameters and neither has a
-default. There is no implicit "current month" fallback: a caller that omits
-either one gets a validation error rather than a silently chosen window,
-so a client can never render a calendar for a period it did not ask for.
+The endpoint MUST require both `from` and `to` query parameters, and
+neither MUST be given a default. There is no implicit "current month"
+fallback: a caller that omits either one MUST receive a validation error
+rather than a silently chosen window, so a client can never render a
+calendar for a period it did not ask for.
 
 #### Scenario: Missing window parameter is rejected
 

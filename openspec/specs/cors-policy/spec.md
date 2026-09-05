@@ -53,10 +53,12 @@ is not blocked purely by CORS header rejection.
 
 ### Requirement: Public Availability Endpoint May Use An Independent Origin Policy
 
-The public availability endpoint's CORS origin policy MAY be configured
-independently from the owner-scoped routes' policy, since it is read-only
-and unauthenticated. Both policies MUST still be explicit configuration and
-MUST NOT use a wildcard.
+The system MUST permit the public availability endpoint's CORS origin
+policy to be configured independently from the owner-scoped routes'
+policy, since it is read-only and unauthenticated. Configuring them
+identically is equally valid — this requirement grants the freedom, it
+does not oblige the split. Both policies MUST still be explicit
+configuration and MUST NOT use a wildcard.
 
 #### Scenario: Public endpoint origin policy differs from the owner-scoped policy
 
