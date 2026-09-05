@@ -4,7 +4,7 @@
 
 The tenant's own published contact channel — a WhatsApp number the owner sets, exposed without authentication so a prospect on the public availability page can reach the owner directly. It is the second unauthenticated surface in the system, deliberately kept independent of `public-availability-calendar`: a contact number belongs to the tenant, not to any property or reservation, and mixing it into the availability response would leave a future reader unable to tell whether it was a deliberate publication or a privacy-boundary regression that survived review. Publishing it is not a leak — it is the owner's own commercial contact information, chosen by the owner to be seen by strangers, categorically different from reservation, client, or payment data, and it touches only `tenants`, a table that by rule (`tenant-management`) holds nothing else private. This capability gives it its own endpoint, its own response model, and its own column projection over `tenants` only.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Unauthenticated Endpoint Keyed By Tenant Slug, Separate From Availability
 

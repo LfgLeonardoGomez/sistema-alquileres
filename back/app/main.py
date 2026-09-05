@@ -9,7 +9,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError
 
 from app import errors
-from app.api.routers import auth, clients, dashboard, payments, properties, public, reservations
+from app.api.routers import (
+    auth,
+    clients,
+    dashboard,
+    payments,
+    properties,
+    public,
+    reservations,
+    tenant,
+)
 from app.config import get_settings
 from app.logging import configure_logging
 from app.middleware import CorrelationMiddleware
@@ -52,6 +61,7 @@ app.include_router(reservations.router)
 app.include_router(payments.router)
 app.include_router(dashboard.router)
 app.include_router(public.router)
+app.include_router(tenant.router)
 
 app.add_exception_handler(IntegrityError, errors.handle_integrity_error)
 

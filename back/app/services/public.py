@@ -27,7 +27,8 @@ from sqlalchemy.orm import Session
 
 from app.models.property import Property
 from app.models.reservation import Reservation
-from app.schemas.public import OccupiedRange, PublicAvailability
+from app.models.tenant import Tenant
+from app.schemas.public import OccupiedRange, PublicAvailability, PublicContact
 
 
 def get_public_availability(
@@ -62,3 +63,21 @@ def get_public_availability(
         )
         for property_id, name in properties
     ]
+
+
+def get_public_contact(session: Session, *, slug: str) -> PublicContact | None:
+    """Design D40 -- a column projection over `tenants` only, no join to any
+    tenant-scoped table. Deliberately a second lookup rather than widening
+    `PublicSessionDep` to carry tenant columns (see that dependency's own
+    docstring). Returns `None` when the slug does not resolve to a row; the
+    router turns that into a 404 -- in practice `PublicSessionDep` already
+    validated the slug before this runs, so this is a defensive branch, not
+    a reachable one on a normal request, matching `GET /tenant`'s own
+    defensive `None` check in `app/api/routers/tenant.py`."""
+    row = session.execute(
+        select(Tenant.name, Tenant.whatsapp).where(Tenant.slug == slug)
+    ).first()
+    if row is None:
+        return None
+    name, whatsapp = row
+    return PublicContact(name=name, whatsapp=whatsapp)

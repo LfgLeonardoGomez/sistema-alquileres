@@ -25,3 +25,15 @@ class PublicAvailability(BaseModel):
     property_id: uuid.UUID
     name: str
     occupied: list[OccupiedRange]
+
+
+class PublicContact(BaseModel):
+    """The second public surface (design D40). Deliberately shares no base
+    class with `PublicAvailability` above or with any authenticated schema
+    (D9 layer 2) -- a shared base would let a field added for one public
+    model accidentally inherit into the other."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    whatsapp: str | None

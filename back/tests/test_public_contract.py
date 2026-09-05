@@ -138,6 +138,36 @@ def test_public_availability_excludes_cancelled_reservations(
     assert body[0]["occupied"] == []
 
 
+def test_public_contact_whatsapp_absent_from_availability_raw_bytes(
+    registered_owner: RegisteredOwner,
+) -> None:
+    """Design D40/D46: the `whatsapp` value must appear in
+    `/public/{slug}/contact`'s response and must NOT appear anywhere in the
+    raw bytes of `/public/{slug}/availability`'s response -- the same
+    string-absence shape `test_public_response_never_contains_private_strings`
+    above uses for reservation/client/payment data. `get_public_availability()`
+    is untouched by this change (design D40), so this test proves that by
+    construction as well as by observation."""
+    _seed_reservation_with_private_data(registered_owner)
+    distinctive_whatsapp = f"549{uuid.uuid4().int % 10**11:011d}"
+    client.patch(
+        "/tenant",
+        headers=registered_owner.headers,
+        json={"whatsapp": distinctive_whatsapp},
+    )
+
+    contact_response = client.get(f"/public/{registered_owner.tenant_slug}/contact")
+    assert contact_response.status_code == 200
+    assert contact_response.json()["whatsapp"] == distinctive_whatsapp
+
+    availability_response = client.get(
+        f"/public/{registered_owner.tenant_slug}/availability",
+        params={"from": "2026-12-01", "to": "2027-01-01"},
+    )
+    assert availability_response.status_code == 200
+    assert distinctive_whatsapp not in availability_response.text
+
+
 def test_public_availability_requires_both_window_parameters() -> None:
     """`from` and `to` are mandatory: neither carries a default.
 

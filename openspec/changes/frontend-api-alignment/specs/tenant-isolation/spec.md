@@ -4,17 +4,58 @@
 
 ### Requirement: `tenants` Is Structurally Excluded From The Table Audit, By Design
 
-`tenants` MUST remain a global table with no `tenant_id` column and no Row-Level Security policy, because login (`POST /auth/login`) and public slug resolution (`GET /public/{tenant_slug}/...`) MUST be able to read it before any tenant context exists. Because the `pg_catalog`/`pg_policies` structural audit (see "Schema audit" above) only inspects tables carrying a `tenant_id` column, `tenants` MUST be understood as deliberately outside that audit's coverage, not as an oversight in it — and a passing result from that audit MUST NOT be treated as evidence that a write path added to `tenants` is safe.
+`tenants` MUST remain a global table with no `tenant_id` column — its key is `id` — because login (`POST /auth/login`) and public slug resolution (`GET /public/{tenant_slug}/...`) MUST be able to read it before any tenant context exists. Because the `pg_catalog`/`pg_policies` structural audit (see "Schema audit" above) selects its subjects by the presence of a `tenant_id` column, `tenants` MUST be understood as deliberately outside that audit's coverage, not as an oversight in it — and a passing result from that audit MUST NOT be treated as evidence that a write path added to `tenants` is safe.
+
+This exclusion is a statement about the audit's reach, not about the table's protection. `tenants` carries its own Row-Level Security policies (see the requirement below); they are simply invisible to a column-driven query. Any claim that `tenants` is protected MUST therefore cite that table's own dedicated tests, never this audit.
 
 #### Scenario: The structural audit does not, and is not expected to, cover `tenants`
 
-- GIVEN the `pg_catalog`/`pg_policies` structural audit that verifies RLS on every tenant-owned table
+- GIVEN the `pg_catalog`/`pg_policies` structural audit that verifies RLS on every table carrying a `tenant_id` column
 - WHEN it runs against the schema
 - THEN it MUST NOT assert anything about `tenants`, and its passing MUST NOT be read as evidence that a write path on `tenants` is safe
 
+#### Scenario: The audit's own triangulation subject is a table that will never gain RLS
+
+- GIVEN the audit is triangulated by a table deliberately expected to carry no RLS, proving the query is driven by column presence rather than a hardcoded table list
+- WHEN `tenants` gains Row-Level Security
+- THEN that triangulation subject MUST move to a table that will never gain RLS or a `tenant_id` column — `alembic_version` — and the triangulating assertion MUST NOT be weakened to accommodate the change
+
+### Requirement: `tenants` Carries Per-Command Row-Level Security, Enabled And Not Forced
+
+`tenants` MUST have Row-Level Security `ENABLE`d and MUST NOT have it `FORCE`d. `alquileres_app` is not the table's owner, so plain `ENABLE` binds the application role completely; `FORCE` would additionally constrain `alquileres_migrator`, whose only `tenants` traffic is the bootstrap and seed path, and would impose a standing "set `app.tenant_id` before every insert" rule on code that legitimately inserts a tenant row before any tenant context can exist.
+
+The table MUST carry exactly three policies, each naming both `alquileres_app` and `alquileres_migrator`:
+
+- `tenants_read` `FOR SELECT USING (true)` — deliberately as permissive as no RLS at all, so the pre-context reads login and the public routes depend on are unaffected by construction.
+- `tenants_insert` `FOR INSERT WITH CHECK (true)` — same rationale, for the bootstrap insert path.
+- `tenants_self_update` `FOR UPDATE`, with both `USING` and `WITH CHECK` predicated on `id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`.
+
+The predicate's right-hand side MUST be copied verbatim from the existing baseline policies rather than retyped from prose; the left-hand side MUST be `id`, because `tenants` has no `tenant_id` column. A policy comparing against any other setting name — `app.current_tenant_id`, for instance — would still exist, still be named correctly, and still enforce nothing, so the policy's rendered predicate text MUST itself be asserted.
+
+There MUST be no `DELETE` policy and no `DELETE` grant on `tenants`. Because RLS denies by omission rather than by error, a `DELETE` grant added later without a matching policy would report success while removing nothing — a silent failure mode that MUST be understood as introduced by enabling RLS on this table.
+
+#### Scenario: The policy set and its predicate text are asserted structurally
+
+- GIVEN `tenants` has Row-Level Security enabled
+- WHEN `pg_policies` is inspected for the table
+- THEN exactly `tenants_read` (SELECT), `tenants_insert` (INSERT), and `tenants_self_update` (UPDATE) MUST be present, each naming both roles, and the UPDATE policy's `qual` and `with_check` text MUST reference `app.tenant_id`
+
+#### Scenario: Pre-context reads survive the introduction of RLS
+
+- GIVEN no `app.tenant_id` has been set on the connection
+- WHEN the application role resolves a tenant by slug, as login and the public routes do
+- THEN the row MUST still be returned
+
 ### Requirement: Any Write Path On `tenants` MUST Guarantee A Tenant Can Only Modify Its Own Row
 
-Because `tenants` carries no RLS backstop, any endpoint that writes to `tenants` MUST guarantee — by whatever mechanism the implementation chooses (an application-level predicate derived from the verified token claim, per-command RLS policies scoped to `tenants`, or an equivalent enforced guarantee) — that a tenant can only ever modify its own row. This guarantee MUST be verified by a dedicated behavioral test that attempts a cross-tenant write against the running application role and asserts it is rejected or scoped away; a code-review-only or unit-level guarantee is insufficient given the table has no database-level backstop underneath it.
+Any endpoint that writes to `tenants` MUST guarantee that a tenant can only ever modify its own row, and MUST do so through defense that survives the failure of any single layer:
+
+1. No tenant identifier appears anywhere in the request surface — not in a path parameter, a query parameter, or a body field.
+2. The row is resolved from the verified `tid` token claim, never from client input.
+3. A column-scoped `GRANT UPDATE` limits the application role to the specific columns a tenant may change; PostgreSQL checks column privileges independently of RLS, so this layer holds regardless of any policy.
+4. The `tenants_self_update` RLS policy scopes the write to the row matching `app.tenant_id`.
+
+This guarantee MUST be verified by dedicated behavioral tests that run against the `alquileres_app` role, never `alquileres_migrator` — the migrator bypasses these policies entirely, since `tenants` is `ENABLE`d and not `FORCE`d, so a test running as the migrator would pass while proving nothing. A code-review-only or unit-level guarantee is insufficient.
 
 #### Scenario: An authenticated owner cannot modify another tenant's row through any write path
 
@@ -22,8 +63,26 @@ Because `tenants` carries no RLS backstop, any endpoint that writes to `tenants`
 - WHEN Tenant A calls a `tenants`-writing endpoint with any parameter, header, or body value that could name Tenant B
 - THEN Tenant B's row MUST remain unchanged, verified against the running `alquileres_app` role
 
+#### Scenario: An unqualified UPDATE is scoped to the acting tenant's row alone
+
+- GIVEN three tenant rows exist and `app.tenant_id` is set to Tenant A
+- WHEN the application role issues an `UPDATE tenants SET ...` with no `WHERE` clause at all
+- THEN exactly one row MUST be affected and the other tenants' rows MUST remain unchanged
+
+#### Scenario: A column outside the grant is denied even for the tenant's own row
+
+- GIVEN `app.tenant_id` is set to Tenant A and the target row is Tenant A's own
+- WHEN the application role attempts to update a column outside the column-scoped grant
+- THEN the statement MUST be denied by the grant, independently of what the RLS policy would permit
+
 #### Scenario: The guarantee is exercised by a behavioral test, not inferred from the structural audit
 
 - GIVEN a write path exists on `tenants`
 - WHEN the test suite is inspected
 - THEN a dedicated cross-tenant-write test for `tenants` MUST exist, distinct from the `pg_catalog` structural audit that does not cover this table
+
+#### Scenario: The cross-tenant test is proven to detect a removed predicate
+
+- GIVEN the `tenants_self_update` policy's `USING` and `WITH CHECK` predicates are both temporarily replaced with `true`
+- WHEN the unqualified-`UPDATE` test is re-run
+- THEN it MUST fail on the affected-row count, demonstrating that the test detects the exact regression it exists to guard against, and the observed output MUST be recorded rather than asserted

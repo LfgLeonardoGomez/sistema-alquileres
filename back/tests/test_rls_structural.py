@@ -49,17 +49,23 @@ def test_all_tenant_tables_have_rls(migrator_engine: Engine) -> None:
 
 
 def test_global_table_without_tenant_id_is_not_flagged(migrator_engine: Engine) -> None:
-    """Triangulation: `tenants` has no `tenant_id` column and no RLS at all
-    (design D5 -- it is a GLOBAL table). The introspection query must not
-    flag it, proving the check is driven by column presence, not a
-    hardcoded table list."""
+    """Triangulation: `alembic_version` has no `tenant_id` column and no
+    RLS at all, permanently (design D14 point 6 / D38). This test's
+    subject used to be `tenants`, but migration `0002` gives `tenants`
+    per-command RLS (design D38, amending D5), so `tenants` is no longer
+    a table with *no* RLS at all -- it moved here rather than having its
+    assertion weakened. `alembic_version` has no grants and no policies
+    by design and proves the same thing: the introspection query is
+    driven by column presence, not a hardcoded table list."""
     with migrator_engine.connect() as conn:
         unprotected = {
             row[0]
             for row in conn.execute(text(_UNPROTECTED_TENANT_TABLES_QUERY))
         }
-        tenants_has_rls = conn.execute(
-            text("SELECT relrowsecurity FROM pg_class WHERE relname = 'tenants'")
+        alembic_version_has_rls = conn.execute(
+            text(
+                "SELECT relrowsecurity FROM pg_class WHERE relname = 'alembic_version'"
+            )
         ).scalar()
-    assert "tenants" not in unprotected
-    assert tenants_has_rls is False
+    assert "alembic_version" not in unprotected
+    assert alembic_version_has_rls is False
