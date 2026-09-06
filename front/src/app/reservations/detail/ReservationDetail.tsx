@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { RESERVATION_DETAIL_COPY } from '../../../shared/copy/reservations'
+import { moneyStillHeldReminder, RESERVATION_DETAIL_COPY } from '../../../shared/copy/reservations'
 import { formatDayMonth } from '../../../shared/date/format'
 import { nightsBetween } from '../../../shared/date/nightsBetween'
 import { formatMoney } from '../../../shared/money/formatMoney'
@@ -65,6 +65,14 @@ export function ReservationDetail() {
   // next commit's 6.30/6.31.
   const isCancelled = stay.status === 'cancelled'
 
+  // Phase 6c (6.35), the owner's decision of 2026-09-06. Derived from
+  // `paid_amount` and from NOTHING else -- no dismissal flag, no
+  // `localStorage`, no server field. It needs none: a refund drives
+  // `paid_amount` down, so a full one retires this on its own and a partial
+  // one leaves it naming the remainder. A "ya lo hice" flag would be a
+  // second, staler answer to a question the amount already answers.
+  const holdsMoneyAfterCancelling = isCancelled && stay.paidAmountCentavos > 0
+
   return (
     <div>
       <Link to="/calendario">{RESERVATION_DETAIL_COPY.volver}</Link>
@@ -105,7 +113,23 @@ export function ReservationDetail() {
           that "los pagos anotados quedan guardados"). */}
       <PaymentsList payments={payments.data ?? []} />
 
-      {isCancelled ? null : (
+      {/* Phase 6c (6.38): 6.15's single `status !== 'cancelled'` gate, now
+          two branches over that same one condition. The cancelled branch
+          carries the reminder and the REFUND ONLY -- editing (6.15 here,
+          6.30/6.31's route guard next door) and recording a NEW incoming
+          payment stay hidden, because the owner asked for refunds
+          specifically, not a general unlock. Cancelling again is gone for
+          the obvious reason. */}
+      {isCancelled ? (
+        holdsMoneyAfterCancelling ? (
+          <section aria-label={RESERVATION_DETAIL_COPY.refund}>
+            <p>{moneyStillHeldReminder(formatMoney(stay.paidAmountCentavos))}</p>
+            <button type="button" onClick={() => setOpenSheet('refund')}>
+              {RESERVATION_DETAIL_COPY.refund}
+            </button>
+          </section>
+        ) : null
+      ) : (
         <section aria-label={RESERVATION_DETAIL_COPY.recordPayment}>
           <button type="button" onClick={() => setOpenSheet('payment')}>
             {RESERVATION_DETAIL_COPY.recordPayment}

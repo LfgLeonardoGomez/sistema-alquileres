@@ -7,7 +7,9 @@ and the undrawn "Anotar un pago" / "Devolución" sheets — the stay, its
 payments, its derived balance in both directions, cancellation, and editing
 a saved reservation's dates and price. Editing is in scope by the owner's
 decision after the proposal, bounded by `ReservationUpdate` to dates and
-price only.
+price only. Giving money back after a cancellation is in scope by a second
+owner decision (2026-09-06), taken once task 6.15 made the hole visible: a
+stay cancelled after it was paid had no way to record the refund.
 
 ## ADDED Requirements
 
@@ -37,6 +39,13 @@ compensating for a live defect. It stands anyway, and MUST NOT be dropped
 as redundant: the frontend's correctness here MUST NOT depend on the
 backend's, or a future regression in one becomes a wrong number shown to
 the owner about her own money with nothing in between.
+
+This requirement is about the BALANCE, and only about it. It does not
+forbid a cancelled reservation from naming money it has already taken in —
+see "A Cancelled Stay That Still Holds Money Says So, Without Calling It A
+Debt" below. That reminder reads `paid_amount` directly, never a derived
+balance, and never uses any of the three phrasings named here, so a
+cancellation still never reads as a debt.
 
 #### Scenario: A cancelled reservation with a nonzero reported balance shows nothing owed
 
@@ -98,6 +107,73 @@ and refund recorded before cancellation.
 - GIVEN a reservation with two recorded payments is then cancelled
 - WHEN its detail view is rendered afterward
 - THEN both payments MUST still appear in the "Pagos" list
+
+### Requirement: A Cancelled Stay That Still Holds Money Says So, Without Calling It A Debt
+
+The system MUST render a reminder naming the amount a cancelled
+reservation has already taken in, whenever its `paid_amount` is positive.
+The reminder MUST NOT use error styling or error-adjacent language, MUST NOT
+block or gate any part of the screen, and MUST NOT use any of the three
+balance phrasings ("Debe", "Le falta pagar", "Le tenés que devolver") — a
+cancellation is never a debt.
+
+The reminder MUST be derived from `paid_amount` alone, with no dismissal
+state of any kind: no local flag, no stored preference, no server field. A
+refund that brings `paid_amount` to zero MUST therefore retire the reminder
+on its own, and a partial refund MUST leave it naming the remainder.
+
+Recording the refund MUST NEVER be mandatory. Nothing else on the screen
+may depend on it, and the owner MUST be able to leave the reminder standing
+indefinitely.
+
+#### Scenario: A cancelled stay that still holds money shows the reminder
+
+- GIVEN a cancelled reservation with a `paid_amount` of `100000`
+- WHEN its detail view is rendered
+- THEN a reminder MUST name `$ 100.000` as money already taken in, with no error indicator anywhere on the screen and none of "Debe", "Le falta pagar" or "Le tenés que devolver"
+
+#### Scenario: A cancelled stay that took in nothing shows no reminder
+
+- GIVEN a cancelled reservation with a `paid_amount` of `0`
+- WHEN its detail view is rendered
+- THEN no reminder about money held MUST appear
+
+#### Scenario: A stay that is not cancelled shows no reminder
+
+- GIVEN a confirmed reservation with a `paid_amount` of `100000`
+- WHEN its detail view is rendered
+- THEN no reminder about money held MUST appear — the balance block already says where a live stay stands
+
+### Requirement: Recording A Refund Survives Cancellation, And Only Recording A Refund
+
+A cancelled reservation that still holds money MUST keep the "Devolución"
+affordance reachable, mounting the same refund sheet a non-cancelled
+reservation uses rather than a second one. That same screen MUST NOT offer
+to edit the reservation, to record a new incoming payment, or to cancel it
+again.
+
+A refund recorded from a cancelled reservation MUST submit a negative
+amount to `POST /reservations/{id}/payments`, identically to one recorded
+from a non-cancelled reservation, and the reminder above MUST reflect the
+resulting `paid_amount` without the owner reloading the page.
+
+#### Scenario: A cancelled stay offers the refund and nothing else
+
+- GIVEN a cancelled reservation with a `paid_amount` of `100000`
+- WHEN its available actions are enumerated
+- THEN "Devolución" MUST be present, and none MUST offer to edit the reservation, to record a new payment, or to cancel it
+
+#### Scenario: A refund that returns everything retires the reminder without a reload
+
+- GIVEN a cancelled reservation with a `paid_amount` of `100000` and its detail view open
+- WHEN the owner records a `100000` refund from that screen
+- THEN the request MUST submit `amount: -100000` to `POST /reservations/{id}/payments`, and the reminder MUST disappear without the owner reloading the page
+
+#### Scenario: A partial refund leaves the reminder naming the remainder
+
+- GIVEN a cancelled reservation with a `paid_amount` of `100000` and its detail view open
+- WHEN the owner records a `40000` refund from that screen
+- THEN the reminder MUST remain, naming `$ 60.000`
 
 ### Requirement: Editing Is Reachable Only While The Reservation Is Not Cancelled
 

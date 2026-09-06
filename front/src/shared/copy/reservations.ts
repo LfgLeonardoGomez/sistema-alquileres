@@ -99,3 +99,30 @@ export const CANCEL_SHEET_COPY = {
 export function cancelConfirmationBody(formattedRange: string, cabinName: string): string {
   return `Las noches del ${formattedRange} en ${cabinName} quedan libres para otra persona. Los pagos anotados quedan guardados.`
 }
+
+// --- Phase 6c: a cancelled stay that still holds money -------------------
+//
+// Task 6.33, and the owner's own decision of 2026-09-06: "que la
+// cancelación deje registrar devoluciones, pero que no sea obligatorio,
+// que sea mas como un mensaje recordatorio que como una obligacion".
+//
+// Not drawn in the handoff -- screen 07 ends at the confirmation -- so this
+// sentence is this run's own invention, flagged here rather than silently
+// presented as drawn, and written to the same register as the strings
+// above it. Deliberately NOT one of the two directional balance lines: it
+// says what she ALREADY took in, never what anyone owes, so a cancellation
+// still never reads as a debt (6.3/6.4's rule, which `displayBalance()`
+// keeps carrying untouched).
+//
+// The second sentence is conditional on purpose -- "si se los devolvés",
+// not "devolveselos". Recording the refund is never mandatory and nothing
+// on the screen waits for it.
+
+/**
+ * `formattedAmount` arrives ALREADY formatted (`$ 100.000`), never as
+ * centavos: `formatMoney` stays the app's single formatter, and this
+ * module goes on knowing nothing about how money is spelled.
+ */
+export function moneyStillHeldReminder(formattedAmount: string): string {
+  return `Esta reserva está cancelada y todavía tenés ${formattedAmount} cobrados. Si se los devolvés, anotalo acá.`
+}
