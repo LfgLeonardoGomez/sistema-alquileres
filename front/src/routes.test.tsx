@@ -192,4 +192,54 @@ describe('routes', () => {
     expect(await screen.findByText('Pagado', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.queryByText(ROUTING_COPY.notFound)).not.toBeInTheDocument()
   })
+
+  // Task 6.15's own "never a dead link" check, following 3.23's precedent
+  // exactly. `/reserva/:id` has been a forward reference in this file since
+  // 3.22 (D31's routing table lists it; nothing before Phase 6 built the
+  // screen). Phase 6 builds it -- and an unwired detail screen would be the
+  // same "built, verified, never wired" defect this module's own comment
+  // already records three times (the queryClient provider, the import
+  // resolver, `/login`). It is also a hard prerequisite for 6.30/6.31,
+  // where `/reserva/:id/editar` must REDIRECT to this route.
+  it('mounts the reservation detail -- never the not-found catch-all -- at /reserva/:id', async () => {
+    const RESERVATION = 'd1111111-1111-1111-1111-111111111111'
+    server.use(
+      http.get('http://localhost:8000/properties', () =>
+        HttpResponse.json([{ id: 'cab-1', name: 'Casa Azul', is_active: true }]),
+      ),
+      http.get('http://localhost:8000/clients', () =>
+        HttpResponse.json([
+          { id: 'guest-1', full_name: 'Marta González', phone: '11 2233 4455', email: null, national_id: null, is_active: true },
+        ]),
+      ),
+      http.get(`http://localhost:8000/reservations/${RESERVATION}`, () =>
+        HttpResponse.json({
+          id: RESERVATION,
+          property_id: 'cab-1',
+          client_id: 'guest-1',
+          check_in: '2026-09-03',
+          check_out: '2026-09-07',
+          status: 'confirmed',
+          price_per_night: null,
+          price_total: '180000.00',
+          paid_amount: '100000.00',
+          created_at: '2026-08-01T00:00:00Z',
+          effective_total: '180000.00',
+          balance: '80000.00',
+          is_completed: false,
+        }),
+      ),
+      http.get(`http://localhost:8000/reservations/${RESERVATION}/payments`, () => HttpResponse.json([])),
+    )
+    const { routeConfig } = await import('./routes')
+
+    const router = createMemoryRouter(routeConfig, { initialEntries: [`/reserva/${RESERVATION}`] })
+    render(<RouterProvider router={router} />)
+
+    // Real, data-driven content from the real query layer -- not merely
+    // "something rendered".
+    expect(await screen.findByRole('heading', { name: 'Marta González' })).toBeInTheDocument()
+    expect(screen.getByText('Le falta pagar')).toBeInTheDocument()
+    expect(screen.queryByText(ROUTING_COPY.notFound)).not.toBeInTheDocument()
+  })
 })

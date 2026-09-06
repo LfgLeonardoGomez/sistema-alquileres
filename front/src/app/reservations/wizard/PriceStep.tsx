@@ -8,8 +8,8 @@ import {
   wizardStepLabel,
 } from '../../../shared/copy/reservations'
 import { formatDateRange } from '../../../shared/date/format'
+import { nightsBetween } from '../../../shared/date/nightsBetween'
 import { useCreateReservation } from '../useCreateReservation'
-import { nightsBetween } from './DateStep'
 import type { WizardCabin, WizardDates, WizardGuest, WizardPriceMode } from './store'
 
 // task 5.20-5.23/5.26-5.31, handoff screen 05 ("paso 4 de 4"),

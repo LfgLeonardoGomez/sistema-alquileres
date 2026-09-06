@@ -4,6 +4,7 @@ import { keys } from '../api/queries/keys'
 import { queryClient } from '../../shared/mutation/queryClient'
 import type { ApiError } from '../../shared/errors/ApiError'
 import type { PlainDate } from '../../shared/date/parsePlainDate'
+import { centavosToApiDecimalString } from '../../shared/money/toApiDecimalString'
 
 // task 5.20-5.31, `reservation-recording` spec: `POST /reservations`
 // (`back/app/schemas/reservation.py`'s `ReservationCreate`), exactly one of
@@ -21,18 +22,6 @@ export type CreateReservationInput = {
   readonly checkOut: PlainDate
   readonly pricePerNightCentavos: number | null
   readonly priceTotalCentavos: number | null
-}
-
-// The reverse of `shared/money/parseMoney.ts` -- integer centavos back to
-// the API's own `"5000.00"` decimal-string shape (D27). A narrow,
-// one-call-site encoder, matching this codebase's established convention
-// of a hand-written boundary function colocated with its one use
-// (`useReservationsForCabin.ts`'s own `decodeReservation`), rather than a
-// new `shared/money/` module for a single caller.
-function centavosToApiDecimalString(centavos: number): string {
-  const pesos = Math.trunc(centavos / 100)
-  const remainder = Math.abs(centavos % 100).toString().padStart(2, '0')
-  return `${pesos}.${remainder}`
 }
 
 type CreateReservationResponse = { readonly id: string }

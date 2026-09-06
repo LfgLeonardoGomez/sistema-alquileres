@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Temporal } from 'temporal-polyfill'
 import type { YearMonth } from '../../../shared/calendar/monthGrid'
 import { formatDayMonth } from '../../../shared/date/format'
+import { nightsBetween } from '../../../shared/date/nightsBetween'
 import type { PlainDate } from '../../../shared/date/parsePlainDate'
 import { todayAR } from '../../../shared/date/todayAR'
 import {
@@ -34,13 +35,6 @@ const MAX_NIGHTS = 60
 function monthOf(date: PlainDate): YearMonth {
   const parsed = Temporal.PlainDate.from(date)
   return { year: parsed.year, month: parsed.month }
-}
-
-// Exported for `PriceStep.tsx`'s own live rescale (5.22/5.23) -- the exact
-// same night count, never a second, independently-written computation that
-// could drift from this one.
-export function nightsBetween(checkIn: PlainDate, checkOut: PlainDate): number {
-  return Temporal.PlainDate.from(checkIn).until(Temporal.PlainDate.from(checkOut)).days
 }
 
 function shiftMonth(month: YearMonth, delta: number): YearMonth {

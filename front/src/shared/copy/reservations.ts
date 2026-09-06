@@ -47,3 +47,55 @@ export function rescaleHelper(nights: number, perNightAmountFormatted: string): 
   const word = nights === 1 ? RESERVATION_WIZARD_COPY.nightSingular : RESERVATION_WIZARD_COPY.nightPlural
   return `Se calcula solo: ${nights} ${word} × ${perNightAmountFormatted}. Si después estirás las fechas, se vuelve a calcular.`
 }
+
+// --- Screen 06 (la reserva, detalle) + screen 07 (cancelar) -------------
+//
+// design D32. Screens 06 and 07 ARE drawn in the handoff, so every string
+// below is lifted from it verbatim rather than invented -- including the
+// two directional balance lines, whose exact wording is the point ("If the
+// balance is negative the same block must read 'Le tenés que devolver' --
+// a normal state, never an error"). The two exceptions, flagged rather
+// than silently presented as drawn: `editar` (screen 06 draws no edit
+// affordance at all -- editing entered scope by the owner's own decision
+// after the proposal was written) and the "Anotar un pago"/"Devolución"
+// sheets' field labels, which the handoff names as sheets but never draws.
+export const RESERVATION_DETAIL_COPY = {
+  entrada: 'Entrada',
+  salida: 'Salida',
+  noches: 'Noches',
+  totalLabel: 'Total de la estadía',
+  paidLabel: 'Pagado',
+  saldoLabel: 'Saldo',
+  owes: 'Le falta pagar',
+  refundOwed: 'Le tenés que devolver',
+  paymentsTitle: 'Pagos',
+  noPayments: 'Todavía no anotaste ningún pago',
+  recordPayment: 'Anotar un pago',
+  refund: 'Devolución',
+  cancel: 'Cancelar',
+  editar: 'Editar la reserva',
+  volver: 'Volver',
+  amountLabel: 'Monto',
+  methodLabel: 'Cómo',
+  methodCash: 'Efectivo',
+  methodTransfer: 'Transferencia',
+  methodOther: 'Otro',
+  noteLabel: 'Nota',
+  guardar: 'Guardar',
+} as const
+
+export const CANCEL_SHEET_COPY = {
+  title: '¿Cancelás esta reserva?',
+  confirm: 'Sí, cancelar',
+  decline: 'No, dejarla como está',
+} as const
+
+/**
+ * Screen 07's body, verbatim: "Las noches del 3 al 7 de septiembre en Casa
+ * Azul quedan libres para otra persona. Los pagos anotados quedan
+ * guardados." `formattedRange` is `formatDateRange()`'s own entrada-to-
+ * salida rendering -- never a minus-one-day "last night" adjustment (D26).
+ */
+export function cancelConfirmationBody(formattedRange: string, cabinName: string): string {
+  return `Las noches del ${formattedRange} en ${cabinName} quedan libres para otra persona. Los pagos anotados quedan guardados.`
+}

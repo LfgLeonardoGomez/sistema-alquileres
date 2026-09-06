@@ -137,6 +137,22 @@ const appRoutes: RouteObject[] = [
       return { Component: Wizard }
     },
   },
+  // Phase 6, D31's routing table. A forward reference in this file since
+  // 3.22 -- and left unwired it would be the fourth instance of this
+  // module's own recurring "built, verified, never wired" defect, with the
+  // detail screen reachable by nothing. It is also a hard prerequisite for
+  // 6.30/6.31, where `/reserva/:id/editar` must REDIRECT here on a
+  // cancelled stay. `/reserva/:id/editar` itself stays a forward reference
+  // for one more commit (Phase 6b, task 6.17) -- the edit link on the
+  // detail screen therefore lands on the catch-all until then, the same
+  // temporary and deliberate gap `/login` carried until 3.14.
+  {
+    path: '/reserva/:id',
+    lazy: async () => {
+      const { ReservationDetail } = await import('./app/reservations/detail/ReservationDetail')
+      return { Component: ReservationDetail }
+    },
+  },
 ]
 
 function NotFoundScreen() {

@@ -1,8 +1,7 @@
-import { Temporal } from 'temporal-polyfill'
 import { Link } from 'react-router'
 import { monthWindow, type YearMonth } from '../../shared/calendar/monthGrid'
 import { CALENDAR_COPY } from '../../shared/copy/calendar'
-import type { PlainDate } from '../../shared/date/parsePlainDate'
+import { nightsBetween } from '../../shared/date/nightsBetween'
 import { formatDateRange } from '../../shared/date/format'
 import { formatMoney } from '../../shared/money/formatMoney'
 import { displayBalance } from '../reservations/displayBalance'
@@ -31,10 +30,6 @@ function overlapsMonth(reservation: ReservationForCalendar, month: YearMonth): b
   // `YYYY-MM-DD` shape (the same convention `pastels.ts`'s own adjacency
   // check uses) -- two ranges overlap iff each starts before the other ends.
   return reservation.checkIn < end && reservation.checkOut > start
-}
-
-function nightsBetween(checkIn: PlainDate, checkOut: PlainDate): number {
-  return Temporal.PlainDate.from(checkOut).since(Temporal.PlainDate.from(checkIn)).days
 }
 
 export function WhoStays({ reservations, guestsById, month, slotByKey }: Props) {

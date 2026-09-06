@@ -23,6 +23,14 @@ export const keys = {
   reservations: () => ['reservations'] as const,
   reservationsByCabin: (cabinId: string) => ['reservations', 'cabin', cabinId] as const,
   reservation: (id: string) => ['reservation', id] as const,
+  // Task 6.6, namespaced UNDER `reservation(id)` for exactly the reason
+  // `reservationsByCabin` is namespaced under `reservations()`: D30's
+  // invalidation rule names `reservation(id)` as the target, and TanStack
+  // Query's partial-key matching then reaches this entry by prefix -- so a
+  // payment recorded on a stay refreshes both the stay's own totals and
+  // its payment list from ONE invalidation, with no second key to
+  // remember (and no chance of remembering only one of them).
+  reservationPayments: (id: string) => ['reservation', id, 'payments'] as const,
   dashboard: () => ['dashboard'] as const,
   cabins: () => ['cabins'] as const,
   clients: () => ['clients'] as const,
