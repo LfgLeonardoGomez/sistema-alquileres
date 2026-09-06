@@ -125,6 +125,18 @@ const appRoutes: RouteObject[] = [
       return { Component: CabinsPlaceholder }
     },
   },
+  // Phase 5, D31's own routing table: the four-step reservation wizard.
+  // `HomeScreen.tsx`'s "Anotar una reserva" link (task 3.21/3.22) already
+  // points at `/reserva/nueva/1` -- this is that forward reference's real
+  // destination, not merely its future one (the same shape `/login` had
+  // here until 3.14, `routes.test.tsx`'s own established pattern).
+  {
+    path: '/reserva/nueva/:paso',
+    lazy: async () => {
+      const { Wizard } = await import('./app/reservations/wizard/Wizard')
+      return { Component: Wizard }
+    },
+  },
 ]
 
 function NotFoundScreen() {

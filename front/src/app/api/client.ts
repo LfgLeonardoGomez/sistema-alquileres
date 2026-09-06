@@ -39,18 +39,12 @@ async function parseJsonBody(response: Response): Promise<unknown> {
 }
 
 /**
- * Issues one request against the API and decodes its JSON body.
- *
- * Every non-2xx response and every thrown network failure is routed
- * through `normalise()` (1.19) into a structured `ApiError` (1.17) and
- * thrown -- never a raw `Response`, a raw exception, or an unhandled
- * rejection reaches caller code. A `401` additionally clears the session
- * (3.13/3.14, owner-session spec's "An Expired Or Invalid Token Clears The
- * Session And Returns To Ingresar") before the same normalised error is
- * thrown, so a caller that happens to catch it still sees no token left
- * behind and no silent re-authentication.
+ * The shared core both `apiRequest` and `apiRequestWithStatus` (D33) build
+ * on -- one place for the network-failure catch, the 401 interceptor and
+ * the non-2xx normalisation, so the two exported shapes below cannot drift
+ * against each other on any of those three behaviours.
  */
-export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function issueRequest(path: string, init?: RequestInit): Promise<{ status: number; body: unknown }> {
   let response: Response
 
   try {
@@ -82,8 +76,43 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   }
 
   if (response.status === 204) {
-    return undefined as T
+    return { status: response.status, body: undefined }
   }
 
-  return (await response.json()) as T
+  return { status: response.status, body: await response.json() }
+}
+
+/**
+ * Issues one request against the API and decodes its JSON body.
+ *
+ * Every non-2xx response and every thrown network failure is routed
+ * through `normalise()` (1.19) into a structured `ApiError` (1.17) and
+ * thrown -- never a raw `Response`, a raw exception, or an unhandled
+ * rejection reaches caller code. A `401` additionally clears the session
+ * (3.13/3.14, owner-session spec's "An Expired Or Invalid Token Clears The
+ * Session And Returns To Ingresar") before the same normalised error is
+ * thrown, so a caller that happens to catch it still sees no token left
+ * behind and no silent re-authentication.
+ */
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const { body } = await issueRequest(path, init)
+  return body as T
+}
+
+/**
+ * Task 5.16/5.17, D33: `POST /clients` is find-or-create-or-reactivate, and
+ * the 200-vs-201 distinction it returns is exactly what the sheet needs to
+ * decide whether the phone matched an existing guest -- information
+ * `apiRequest` alone discards. A DISTINCTLY NAMED export, not an overload
+ * of `apiRequest`, deliberately: `lookups.test.ts`'s own `LOOKUP_CALL_SITE`
+ * regex is anchored to the literal token `apiRequest(` (optionally with
+ * generics) followed immediately by `(`, so a call written as
+ * `apiRequestWithStatus(...)` does not match it -- correctly, since that
+ * guard's own stated purpose is "no other module calls /properties or
+ * /clients for A LOOKUP" (D30), and find-or-create-or-reactivate is a
+ * write, never a list read.
+ */
+export async function apiRequestWithStatus<T>(path: string, init?: RequestInit): Promise<{ data: T; status: number }> {
+  const { status, body } = await issueRequest(path, init)
+  return { data: body as T, status }
 }
