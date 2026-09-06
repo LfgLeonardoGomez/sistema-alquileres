@@ -80,3 +80,39 @@ export async function getPublicAvailability(
   const body = (await response.json()) as RawPublicAvailability[]
   return body.map(decode)
 }
+
+// design D37 (corrected) + the Phase 2 addendum's gap 2: the WhatsApp
+// number is per-tenant and comes from the API, never a build-time global
+// (one build serves every slug, so a build-time number would be the same
+// number on every tenant's page). Same shape as `getPublicAvailability`
+// above: its own fetch, no token parameter anywhere in its signature, and
+// every failure routes through the shared `normalise()`.
+export type PublicContact = {
+  readonly name: string
+  readonly whatsapp: string | null
+}
+
+/**
+ * Fetches `GET /public/{slug}/contact` (`back/app/schemas/public.py`'s
+ * `PublicContact`). The raw body already matches this module's own
+ * `PublicContact` shape field-for-field -- no date/money brand to decode,
+ * unlike `getPublicAvailability` -- so it is returned as-is once its shape
+ * is asserted at the type boundary.
+ */
+export async function getPublicContact(slug: string): Promise<PublicContact> {
+  let response: Response
+  try {
+    response = await fetch(`${env.apiBaseUrl}/public/${slug}/contact`)
+  } catch (cause) {
+    if (cause instanceof TypeError) {
+      throw normalise(NETWORK_FAILURE_STATUS, undefined)
+    }
+    throw cause
+  }
+
+  if (!response.ok) {
+    throw normalise(response.status, await parseJsonBody(response))
+  }
+
+  return (await response.json()) as PublicContact
+}

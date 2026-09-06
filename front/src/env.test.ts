@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // The frontend analogue of "the app refuses to boot without JWT_SECRET"
 // (design D37): env.ts validates VITE_API_BASE_URL and VITE_TENANT_SLUG at
 // module load, with no default for either, and throws naming whichever is
-// missing. VITE_WHATSAPP_NUMBER is optional.
+// missing. The build-time WhatsApp number env var this file used to test
+// is deleted entirely (task 2.39, the Phase 2 addendum's gap 2): the
+// number is per-tenant, from `GET /public/{slug}/contact`, never a
+// build-time global -- a build-time fallback would print one tenant's
+// number on another tenant's page.
 
 describe('env', () => {
   const originalEnv = { ...import.meta.env }
@@ -30,15 +34,26 @@ describe('env', () => {
     await expect(import('./env')).rejects.toThrow(/VITE_API_BASE_URL/)
   })
 
-  it('does not throw, and exposes all three values, when configured', async () => {
+  it('does not throw, and exposes both values, when configured', async () => {
     import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
     import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
-    import.meta.env.VITE_WHATSAPP_NUMBER = '5492215551234'
 
     const { env } = await import('./env')
 
     expect(env.apiBaseUrl).toBe('http://localhost:8000')
     expect(env.tenantSlug).toBe('mar-del-tuyu-cabins')
-    expect(env.whatsappNumber).toBe('5492215551234')
+  })
+
+  // Task 2.39: the deleted build-time WhatsApp number no longer exists on
+  // `env` at all -- not `undefined`, not an empty string, absent as a key.
+  // `in` (not a truthiness check) so a future accidental re-addition with
+  // a falsy value would still fail this test.
+  it('no longer exposes a whatsappNumber field', async () => {
+    import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
+    import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
+
+    const { env } = await import('./env')
+
+    expect('whatsappNumber' in env).toBe(false)
   })
 })

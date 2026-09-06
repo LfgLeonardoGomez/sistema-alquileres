@@ -98,3 +98,87 @@ describe('getPublicAvailability', () => {
     ).rejects.toEqual({ status: NETWORK_FAILURE_STATUS, code: null })
   })
 })
+
+// design D37 (corrected) + the Phase 2 addendum's gap 2: the WhatsApp
+// number is per-tenant, from `GET /public/{slug}/contact`, never a
+// build-time global -- one build serves every slug, so a build-time
+// number is the same number on every tenant's page (task 2.36-2.39).
+describe('getPublicContact', () => {
+  const originalEnv = { ...import.meta.env }
+
+  beforeEach(() => {
+    import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
+    import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    Object.assign(import.meta.env, originalEnv)
+    localStorage.clear()
+  })
+
+  it('requests GET /public/{slug}/contact and returns name and a nullable whatsapp', async () => {
+    server.use(
+      http.get('http://localhost:8000/public/:slug/contact', ({ params }) =>
+        HttpResponse.json({ name: `Tenant ${params.slug as string}`, whatsapp: '5491122334455' }),
+      ),
+    )
+
+    const { getPublicContact } = await import('./api')
+
+    const result = await getPublicContact('mar-del-tuyu-cabins')
+
+    expect(result).toEqual({ name: 'Tenant mar-del-tuyu-cabins', whatsapp: '5491122334455' })
+  })
+
+  // Triangulates the nullable half of the shape -- a tenant with no number
+  // set (`back/app/schemas/public.py`'s `whatsapp: str | None`) round-trips
+  // as `null`, not a missing field, not an empty string, not a fallback.
+  it('returns whatsapp: null for a tenant with no number set', async () => {
+    server.use(
+      http.get('http://localhost:8000/public/:slug/contact', () =>
+        HttpResponse.json({ name: 'Casa Aya', whatsapp: null }),
+      ),
+    )
+
+    const { getPublicContact } = await import('./api')
+
+    const result = await getPublicContact('casa-aya')
+
+    expect(result).toEqual({ name: 'Casa Aya', whatsapp: null })
+  })
+
+  // Same structural guarantee as `getPublicAvailability` (2.18/2.19): no
+  // parameter exists in this function's signature that could carry a
+  // token, so the header cannot be attached by mistake -- checked with the
+  // same real scenario, a valid token left in storage by a concurrent
+  // authenticated session.
+  it('sends no Authorization header, even with a valid token sitting in localStorage', async () => {
+    localStorage.setItem('alquileres-aya:token', 'a.valid.jwt-token-left-by-another-tab')
+
+    let capturedAuthorization: string | null = 'not-captured'
+    server.use(
+      http.get('http://localhost:8000/public/:slug/contact', ({ request }) => {
+        capturedAuthorization = request.headers.get('Authorization')
+        return HttpResponse.json({ name: 'Casa Aya', whatsapp: null })
+      }),
+    )
+
+    const { getPublicContact } = await import('./api')
+
+    await getPublicContact('mar-del-tuyu-cabins')
+
+    expect(capturedAuthorization).toBeNull()
+  })
+
+  it('normalises a network failure the same way getPublicAvailability does', async () => {
+    server.use(http.get('http://localhost:8000/public/:slug/contact', () => HttpResponse.error()))
+
+    const { getPublicContact } = await import('./api')
+
+    await expect(getPublicContact('mar-del-tuyu-cabins')).rejects.toEqual({
+      status: NETWORK_FAILURE_STATUS,
+      code: null,
+    })
+  })
+})

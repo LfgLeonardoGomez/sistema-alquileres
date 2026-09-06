@@ -14,16 +14,7 @@ function requireEnvVar(name: string): string {
   return value
 }
 
-function optionalEnvVar(name: string): string | undefined {
-  const value = import.meta.env[name]
-  return value === undefined || value === '' ? undefined : value
-}
-
 export const env = {
   apiBaseUrl: requireEnvVar('VITE_API_BASE_URL'),
   tenantSlug: requireEnvVar('VITE_TENANT_SLUG'),
-  // When unset, the "Escribinos por WhatsApp" button is not rendered at all
-  // (design D37) -- a dead wa.me link fails only on the prospect's side,
-  // where nobody will ever report it.
-  whatsappNumber: optionalEnvVar('VITE_WHATSAPP_NUMBER'),
 }
