@@ -60,22 +60,29 @@ requested window in one call.
 - WHEN the owner selects `Casa Azul` from the filter
 - THEN no new request MUST be sent, and only Casa Azul's calendar MUST be shown
 
-### Requirement: The WhatsApp Button Renders Only When A Number Is Configured
+### Requirement: The WhatsApp Button Renders Only When That Tenant Has Set A Number
 
-The system MUST render "Escribinos por WhatsApp" only when a WhatsApp number
-is configured at build time. When unset, the button MUST NOT render at all.
+The system MUST render "Escribinos por WhatsApp" only when the tenant whose slug the page was opened with has a contact number set, and MUST take that number from `GET /public/{slug}/contact`. When the tenant has none set, the button MUST NOT render at all.
 
-#### Scenario: No configured number means no button
+The number MUST NOT come from a build-time value. One build serves every tenant slug, so a build-time number is the same number on every tenant's page: the first tenant to onboard without their own number would publish somebody else's, and a prospect would write to a stranger about a cabin that stranger does not own. For the same reason there MUST be no build-time fallback for a tenant whose number is unset — falling back reintroduces exactly that failure on the path where it is least likely to be noticed. An unset number MUST produce no button, which is a correct and complete answer.
 
-- GIVEN no WhatsApp number is configured at build time
+#### Scenario: A tenant with no number set shows no button
+
+- GIVEN the contact endpoint reports `whatsapp: null` for the requested slug
 - WHEN the public page is rendered
 - THEN "Escribinos por WhatsApp" MUST NOT be present anywhere on the page
 
-#### Scenario: A configured number produces a working link
+#### Scenario: A tenant's own number produces a working link
 
-- GIVEN a WhatsApp number is configured at build time
+- GIVEN the contact endpoint reports a number for the requested slug
 - WHEN the public page is rendered
 - THEN the button MUST link to that number's `wa.me` address
+
+#### Scenario: Two tenants do not share a number
+
+- GIVEN two slugs whose contact endpoints report different numbers
+- WHEN each tenant's public page is rendered from the same build
+- THEN each page MUST show its own tenant's number, and neither MUST show the other's
 
 ### Requirement: Occupied Ranges Render With No Per-Stay Identity Or Color Distinction
 

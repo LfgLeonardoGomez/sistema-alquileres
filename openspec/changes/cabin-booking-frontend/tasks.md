@@ -242,6 +242,42 @@ and Phase 1 is where strict RED → GREEN → TRIANGULATE begins in earnest.
 - [x] 2.30 [TEST] Deliberately-violating fixture (extend 1.28, now against the real public page): `src/public/AvailabilityPage.tsx` imports nothing from `src/app/**`; a fixture importing `src/app/session/store.ts` fails lint. Confirm, then remove the violating import.
   **Observed:** **Deviation flagged, not silently substituted:** `src/app/session/store.ts` does not exist yet — it is task 3.3, gated behind 3.1's still-unapproved BLOCKING human-approval slice, and this run was explicitly told not to start Phase 3. Importing a genuinely nonexistent file risks reproducing 1.28's own discovered gap in the opposite direction (an unresolvable specifier can *also* fail to trigger `import/no-restricted-paths`, the same silent-swallow failure mode 1.28 found and fixed for extensionless `.ts` files — but that fix only helps files that exist under a resolvable extension; a target with no file on disk at all still fails resolution outright). Used `src/app/api/client.ts` instead — a real, existing, committed `src/app/**` file — so the fixture proves the boundary fires against genuine resolvable code, which is the stronger and more honest proof. Fixture: a throwaway `src/public/__fixtures__/violatesBoundary.ts` importing `getApiRequest` re-exported... (see below) from `../../app/api/client`; ran `npx eslint src/public/__fixtures__` and confirmed the exact configured `import/no-restricted-paths` error fires. Then added a second, legal fixture importing from `src/shared/errors/ApiError` to confirm shared imports still pass. Deleted both afterward; `git status` confirms `src/public/__fixtures__/` is gone and no other file changed. Separately, and non-fixture: confirmed by direct inspection and by `eslint .` passing clean that `AvailabilityPage.tsx`, `PublicMonthCalendar.tsx`, and `public/api.ts` import nothing from `src/app/**` — only `../env`, `../shared/**`, and sibling `./` modules.
 
+### Phase 2 addendum — two gaps found by implementing it
+
+> Both were found by building the slice, not by reading the plan, and both
+> are fixed here rather than carried into Phase 3.
+>
+> **Gap 1: nothing in this task list creates the router.** D31 chooses React
+> Router v7 with "one explicit `routes.tsx`", rejects TanStack Router by
+> name, and the design's tree diagram shows the file — but no task builds
+> it. Meanwhile task **3.14** requires the 401 handler to call
+> `router.navigate('/login')` and **never** `window.location`, and task
+> **5.31** depends on that same rule, because a location assignment reloads
+> the document and destroys the owner's in-progress wizard draft. The task
+> that uses the router was written; the task that creates it was not. It
+> sits directly on the critical path of the CRITICAL-domain session work, so
+> it lands before Phase 3, not after. (`useMonthParam`/`useCabinParam` are
+> NOT part of this gap — they are already tasked at 4.11/4.12.)
+>
+> **Gap 2: the WhatsApp number is modelled as a build-time global and is
+> per-tenant.** See the corrected D37 row and the rewritten
+> `public-availability-page` requirement. One build serves every slug, so a
+> build-time number publishes the same number on every tenant's page. The
+> endpoint that fixes this was built earlier the same day; this design was
+> written before it existed and says so itself.
+
+- [ ] 2.31 [RED] `front/src/routes.test.tsx`: rendering the router at `/disponibilidad/casa-aya` mounts the availability page with the slug taken **from the URL**, and a different slug in the URL reaches the page as that different slug — the module does not exist, so this fails at import.
+- [ ] 2.32 [GREEN] `front/src/routes.tsx` (create) + `front/src/main.tsx`: React Router v7, declarative, **both trees visibly separate in one readable file** (D31), the public tree `lazy()`. `routes.tsx` is the one module allowed to reference both trees — it lives at `src/`, outside `src/public/`, so 0.5's `import/no-restricted-paths` rule is not weakened to admit it. Re-run 2.31 → green.
+- [ ] 2.33 [RED] `front/src/public/AvailabilityPage.test.tsx` (extend): the page reads its slug from the route param rather than a prop — assert the prop is gone from its signature, so the component cannot be mounted with a slug its URL does not carry.
+- [ ] 2.34 [GREEN] `AvailabilityPage` takes no `slug` prop and uses the router's param. Re-run 2.33 → green, and re-run 2.20–2.29 to confirm the existing page behaviour is unchanged by the move.
+- [ ] 2.35 [TEST] `front/src/routes.test.tsx` (extend): an unknown path under the public prefix renders the app's own not-found surface rather than a blank document. **Labelled `[TEST]`:** this is route configuration, not a behaviour with a red phase of its own. Record the SPA-hosting requirement D37 already names — the host must serve `index.html` for unknown paths, or `/disponibilidad/casa-aya` 404s on a hard load and the failure is visible only to strangers.
+
+- [ ] 2.36 [RED] `front/src/public/api.test.ts` (extend): `getPublicContact(slug)` requests `GET /public/{slug}/contact` and returns `{name, whatsapp}` with `whatsapp` nullable; like `getPublicAvailability`, **no token parameter exists in its signature** — the function does not exist yet, so this fails.
+- [ ] 2.37 [GREEN] `front/src/public/api.ts`: add `getPublicContact`, same no-token shape, same `normalise()` path. Re-run 2.36 → green.
+- [ ] 2.38 [RED][TRAP] `front/src/public/AvailabilityPage.test.tsx` (extend): MSW serves **two different slugs with two different numbers**; each page renders its own tenant's number and neither renders the other's. Then a slug whose contact reports `whatsapp: null` renders no button at all — **not a build-time fallback number**. This is the multi-tenant leak the build-time variable would have caused, pinned by a test before the code can regress into it.
+- [ ] 2.39 [GREEN] `AvailabilityPage` sources the number from 2.37's endpoint; **delete `VITE_WHATSAPP_NUMBER` from `front/src/env.ts`, `front/.env.example`, and the D37 table's live rows**, and delete the env-var branch from the component. Update `front/src/env.test.ts` accordingly. Re-run 2.38 and 2.28/2.29's replacements → green. A grep for `VITE_WHATSAPP_NUMBER` across `front/` must return nothing but the corrected design's struck-through row.
+
+
 ## Phase 3: Slice 3 — Ingresar + Inicio (`owner-session`, `home-summary`) — contains the BLOCKING approval gate
 
 - [ ] 3.1 **[BLOCKING — HUMAN APPROVAL REQUIRED]** D29 (`owner-session`) is CRITICAL domain. `design.md`'s own opening line states this document does not approve it and it "must ship as its own reviewable slice, never folded into a batch." Present to a human, for explicit sign-off, before writing 3.2: **(a)** the token-storage decision — `localStorage` — and its stated residual risk in full: any XSS in this app is her whole account for up to 8 hours, and no storage choice available to a bearer-token frontend (`allow_credentials=False`, D22) changes that; the accepted mitigation is *not having an XSS* (React's default escaping, no `dangerouslySetInnerHTML`, no runtime third-party resource — D37), and the tripwire that reverses the decision (a third-party script tag, a rich-text field, or any HTML-from-server rendering); **(b)** the expiry mechanism — proactive: the stored token's `exp` claim is base64url-decoded (unverified, and **only** `exp` — never `tid`, never `sub`) on app start and on window focus, treating an expired token as absent; reactive: any `401` clears the token and navigates via the router, **never `window.location`**, because a location assignment reloads the document and destroys the in-progress wizard draft; **(c)** the copy register for the expiry message — proposed **"Entrá de nuevo para seguir."**, containing none of "token"/"sesión"/"expiró"/"error", owner to confirm or correct the wording. **Do not write 3.2 or any session-store or client-interceptor code until this is approved.**
@@ -436,7 +472,7 @@ and Phase 1 is where strict RED → GREEN → TRIANGULATE begins in earnest.
 |---|---|---|---|
 | 0 | none — scaffolding | 9 (0.1–0.9) | Not TDD-able. First TDD-able unit is 0.7 |
 | 1 | `frontend-foundation` / `interface-copy-and-formatting` | 28 (1.1–1.28) | No screen ships. RED/GREEN/TRIANGULATE starts here. Two standing regression guards established (1.22 glossary, 1.25/1.28 boundary) |
-| 2 | `month-calendar-rendering` / `public-availability-page` | 30 (2.1–2.30) | Independently shippable — the owner can paste the link before the app she signs into exists |
+| 2 | `month-calendar-rendering` / `public-availability-page` | 39 (2.1–2.39) | Independently shippable — the owner can paste the link before the app she signs into exists **2.31–2.39 added after implementation:** no task created the router D31 chose and 3.14 depends on, and the WhatsApp number was modelled build-time while the API serves it per tenant |
 | 3 | `owner-session` / `home-summary` | 23 (3.1–3.23) | **1 BLOCKING human-approval gate (3.1, covers D29).** No session code precedes it |
 | 4 | `reservation-calendar` (+ pastel placement note re: `month-calendar-rendering`) | 28 (4.1–4.28) | The screen she opens most |
 | 5 | `reservation-recording` | 31 (5.1–5.31) | Contains the handoff's own apparent contradiction (5.10/5.11) and the deferred 401-draft-survival proof (5.30/5.31) |
@@ -445,4 +481,4 @@ and Phase 1 is where strict RED → GREEN → TRIANGULATE begins in earnest.
 | 7 | `guest-directory` | 16 (7.1–7.16) | Reuses Phase 5's find-or-create sheet and Phase 4's `displayBalance()` |
 | 8 | `cabin-directory` | 10 (8.1–8.10) | Last, and genuinely so — two rows that change roughly never |
 | 9 | cross-cutting | 6 (9.1–9.6) | 9.6 (docker-compose) is a recorded deferral, not a slice deliverable |
-| **Total** | | **212** | 1 BLOCKING human-approval gate; 10 commits (0 through 9, with Phase 6 split into two) |
+| **Total** | | **221** | 1 BLOCKING human-approval gate; 10 commits (0 through 9, with Phase 6 split into two) |
