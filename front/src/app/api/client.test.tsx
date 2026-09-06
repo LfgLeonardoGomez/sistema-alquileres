@@ -1,0 +1,215 @@
+import { render, screen } from '@testing-library/react'
+import { HttpResponse, http } from 'msw'
+import { RouterProvider } from 'react-router'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SESSION_COPY } from '../../shared/copy/session'
+import { NETWORK_FAILURE_STATUS } from '../../shared/errors/normalise'
+import { server } from '../../test/setup'
+
+// design D32: `fetch` rejects with an indistinguishable TypeError for a
+// dropped connection and a CORS rejection. `client.ts` is the app's one
+// network call site (1.25); it must never leak a raw exception to caller
+// code -- every failure is routed through 1.19's `normalise()` into a
+// structured `ApiError` (1.17: no `detail` field, structurally).
+//
+// `router` (from `../../routes`) and `useSessionStore` (from
+// `../session/store`) are dynamically imported inside each test, never
+// statically at the top of this file -- both transitively import `env.ts`,
+// which reads `import.meta.env` at module load (0.7/1.23's own discipline);
+// a static top-level import here evaluates before `beforeEach` sets those
+// variables and throws `env.ts`'s own "missing variable" error.
+
+describe('apiRequest', () => {
+  const originalEnv = { ...import.meta.env }
+
+  beforeEach(() => {
+    import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
+    import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
+  })
+
+  afterEach(() => {
+    Object.assign(import.meta.env, originalEnv)
+  })
+
+  it('normalises a network failure with no response body into a structured ApiError, never an unhandled rejection', async () => {
+    server.use(http.get('http://localhost:8000/reservations', () => HttpResponse.error()))
+
+    const { apiRequest } = await import('./client')
+
+    await expect(apiRequest('/reservations')).rejects.toEqual({
+      status: NETWORK_FAILURE_STATUS,
+      code: null,
+    })
+  })
+
+  // Triangulates against a different failure shape entirely: a real,
+  // shaped `{detail, code}` response, proving the same call site routes
+  // both through 1.19's `normalise()` rather than special-casing the
+  // network branch.
+  it('normalises a shaped 409 response into a structured ApiError, discarding detail', async () => {
+    server.use(
+      http.post('http://localhost:8000/reservations', () =>
+        HttpResponse.json({ detail: 'Dates are not available', code: 'dates_unavailable' }, { status: 409 }),
+      ),
+    )
+
+    const { apiRequest } = await import('./client')
+
+    await expect(apiRequest('/reservations', { method: 'POST' })).rejects.toEqual({
+      status: 409,
+      code: 'dates_unavailable',
+    })
+  })
+
+  it('resolves with the decoded JSON body on a successful request, built against the same env.ts base URL', async () => {
+    server.use(
+      http.get('http://localhost:8000/dashboard/summary', () =>
+        HttpResponse.json({ occupied_nights: 18, capacity_nights: 60 }),
+      ),
+    )
+
+    const { apiRequest } = await import('./client')
+
+    await expect(apiRequest('/dashboard/summary')).resolves.toEqual({
+      occupied_nights: 18,
+      capacity_nights: 60,
+    })
+  })
+
+  // D31 point 1: "app/api/client.ts is the only module that reads the
+  // token and sets an Authorization header." Not itself named as a
+  // separate RED/GREEN pair by tasks 3.2-3.14's text, but D31 states it as
+  // a binding architectural requirement and this module's own prior
+  // comment ("no bearer-header attachment yet -- the session store this
+  // depends on does not exist until Phase 3") named it as this phase's own
+  // deferred work -- see 3.14's Observed note for the full account of why
+  // this is tested here rather than left unimplemented or implemented
+  // untested.
+  describe('bearer header attachment', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('attaches Authorization: Bearer <token> when a token is present', async () => {
+      let capturedAuthHeader: string | null = null
+      server.use(
+        http.get('http://localhost:8000/dashboard/summary', ({ request }) => {
+          capturedAuthHeader = request.headers.get('Authorization')
+          return HttpResponse.json({ occupied_nights: 1, capacity_nights: 1 })
+        }),
+      )
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().setToken('a-valid-looking-token')
+
+      const { apiRequest } = await import('./client')
+      await apiRequest('/dashboard/summary')
+
+      expect(capturedAuthHeader).toBe('Bearer a-valid-looking-token')
+      useSessionStore.getState().clearToken()
+    })
+
+    // Triangulates against the absence case: no token in the store means
+    // no header at all, not an `Authorization: Bearer null` string.
+    it('sends no Authorization header when no token is present', async () => {
+      let capturedAuthHeader: string | null = 'not-yet-observed'
+      server.use(
+        http.get('http://localhost:8000/dashboard/summary', ({ request }) => {
+          capturedAuthHeader = request.headers.get('Authorization')
+          return HttpResponse.json({ occupied_nights: 1, capacity_nights: 1 })
+        }),
+      )
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().clearToken()
+
+      const { apiRequest } = await import('./client')
+      await apiRequest('/dashboard/summary')
+
+      expect(capturedAuthHeader).toBeNull()
+    })
+  })
+
+  // owner-session spec's "An Expired Or Invalid Token Clears The Session
+  // And Returns To Ingresar" -- the REACTIVE half (D29(b)): any 401, from
+  // any request, anywhere, hits this ONE interceptor. `router.navigate`
+  // is spied and stubbed to a no-op -- this is a unit test of the
+  // interceptor's own two actions (clear the token, call the router's own
+  // method), not an integration test of what `/login` then renders.
+  describe('the 401 interceptor', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('clears the stored token and navigates to /login via the router, never window.location', async () => {
+      server.use(
+        http.get('http://localhost:8000/reservations', () =>
+          HttpResponse.json({ detail: 'Invalid or expired token', code: null }, { status: 401 }),
+        ),
+      )
+      const { router } = await import('../../routes')
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().setToken('a-valid-looking-token')
+      const navigateSpy = vi.spyOn(router, 'navigate').mockImplementation(() => Promise.resolve())
+
+      const { apiRequest } = await import('./client')
+
+      await expect(apiRequest('/reservations')).rejects.toEqual({ status: 401, code: null })
+      expect(useSessionStore.getState().token).toBeNull()
+      expect(navigateSpy).toHaveBeenCalledWith('/login')
+
+      useSessionStore.getState().clearToken()
+    })
+
+    it('does not silently re-authenticate on a reload after a 401 clears the token', async () => {
+      server.use(
+        http.get('http://localhost:8000/reservations', () =>
+          HttpResponse.json({ detail: 'Invalid or expired token', code: null }, { status: 401 }),
+        ),
+      )
+      const { router } = await import('../../routes')
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().setToken('a-valid-looking-token')
+      vi.spyOn(router, 'navigate').mockImplementation(() => Promise.resolve())
+
+      const { apiRequest } = await import('./client')
+      await expect(apiRequest('/reservations')).rejects.toEqual({ status: 401, code: null })
+
+      // "A reload afterward" -- a fresh module load of the store, the same
+      // dynamic-import discipline the store's own tests use, standing in
+      // for reopening the app. `localStorage` (real, not mocked) is what
+      // actually carries the cleared state across this reload.
+      vi.resetModules()
+      const { useSessionStore: reloadedSessionStore } = await import('../session/store')
+      expect(reloadedSessionStore.getState().isAuthenticated).toBe(false)
+    })
+
+    // The two tests above spy `router.navigate` to a no-op and assert only
+    // that it was CALLED with `/login` -- proof the interceptor tried, not
+    // proof the owner actually ends up looking at the sign-in screen.
+    // `routes.tsx`'s `appRoutes` was empty until this task, so that call
+    // was landing on the catch-all not-found screen in production despite
+    // every test above being green. This test uses the REAL router (no
+    // spy, no mock) and renders it, so a real 401 must produce a real,
+    // visible sign-in screen -- the actual owner-session spec requirement,
+    // not an interceptor implementation detail.
+    it('a real 401 through the real router lands the owner on the sign-in screen, not just a spied navigate call', async () => {
+      server.use(
+        http.get('http://localhost:8000/reservations', () =>
+          HttpResponse.json({ detail: 'Invalid or expired token', code: null }, { status: 401 }),
+        ),
+      )
+      const { router } = await import('../../routes')
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().setToken('a-valid-looking-token')
+
+      render(<RouterProvider router={router} />)
+
+      const { apiRequest } = await import('./client')
+      await expect(apiRequest('/reservations')).rejects.toEqual({ status: 401, code: null })
+
+      expect(await screen.findByLabelText(SESSION_COPY.emailLabel)).toBeInTheDocument()
+      expect(useSessionStore.getState().token).toBeNull()
+
+      useSessionStore.getState().clearToken()
+    })
+  })
+})

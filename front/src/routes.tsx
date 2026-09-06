@@ -37,11 +37,28 @@ const publicRoutes: RouteObject[] = [
 
 // --- Authenticated tree: bearer, D31. -----------------------------------
 //
-// Empty for now, on purpose. Phase 3's session/login work (`/login`,
-// `/inicio`, ...) is gated behind task 3.1's still-unapproved BLOCKING
-// human-approval slice (D29, CRITICAL domain) -- no route that could reach
-// it is wired ahead of that approval.
-const appRoutes: RouteObject[] = []
+// `/login` only, so far. Task 3.1's BLOCKING human-approval gate (D29,
+// CRITICAL domain) is approved (2026-09-05) and Phase 3's session work is
+// implemented -- `/inicio` and the rest of the authenticated tree still
+// don't exist as of this task, so they are not wired here either.
+//
+// `lazy()` here for the same reason as the public tree above, plus one
+// more: `LoginScreen` -> `client.ts` -> `router` (this module) would be a
+// static circular import if `LoginScreen` were imported at the top of this
+// file. A dynamic import inside `lazy` is not evaluated at module-load
+// time, so the cycle this file's other half creates never actually forms --
+// `client.ts`'s own top-level `import { router } from '../../routes'`
+// (task 3.14) stays exactly as approved, calling `router.navigate('/login')`
+// through the router, never `window.location`.
+const appRoutes: RouteObject[] = [
+  {
+    path: '/login',
+    lazy: async () => {
+      const { LoginScreen } = await import('./app/session/LoginScreen')
+      return { Component: LoginScreen }
+    },
+  },
+]
 
 function NotFoundScreen() {
   return <p>{ROUTING_COPY.notFound}</p>
@@ -53,8 +70,9 @@ export const routeConfig: RouteObject[] = [
   { path: '*', Component: NotFoundScreen },
 ]
 
-// The one router instance the app renders. Also the future home of task
-// 3.14's `router.navigate('/login')` on a 401 -- a router method call,
-// never `window.location`, because a location assignment reloads the
-// document and destroys the owner's in-progress wizard draft (D29, 5.31).
+// The one router instance the app renders. Task 3.14's `client.ts` already
+// calls `router.navigate('/login')` on a 401 -- a router method call, never
+// `window.location`, because a location assignment reloads the document and
+// destroys the owner's in-progress wizard draft (D29, 5.31). `/login` above
+// is that call's actual destination, not merely its future one.
 export const router = createBrowserRouter(routeConfig)

@@ -3,6 +3,8 @@ import { HttpResponse, http } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { server } from './test/setup'
+import { SESSION_COPY } from './shared/copy/session'
+import { ROUTING_COPY } from './shared/copy/routing'
 
 // design D31 + the Phase 2 addendum (gap 1): "one explicit routes.tsx",
 // both trees visibly separate, public tree lazy(). This is the module that
@@ -79,5 +81,22 @@ describe('routes', () => {
     render(<RouterProvider router={router} />)
 
     expect(await screen.findByText('No encontramos esa página.')).toBeInTheDocument()
+  })
+
+  // owner-session spec's "An Expired Or Invalid Token Clears The Session And
+  // Returns To Ingresar" depends on `/login` actually resolving to the
+  // sign-in screen -- `client.ts`'s 401 branch (task 3.14) already calls
+  // `router.navigate('/login')`, but until this route exists in
+  // `appRoutes`, that call falls through to the catch-all and lands the
+  // owner on the not-found surface instead. Asserting on the not-found
+  // text's ABSENCE, not just the sign-in screen's presence, is the point:
+  // it is what proves the fall-through no longer happens.
+  it('mounts the login screen at /login, not the not-found screen', async () => {
+    const { routeConfig } = await import('./routes')
+    const router = createMemoryRouter(routeConfig, { initialEntries: ['/login'] })
+    render(<RouterProvider router={router} />)
+
+    expect(await screen.findByLabelText(SESSION_COPY.emailLabel)).toBeInTheDocument()
+    expect(screen.queryByText(ROUTING_COPY.notFound)).not.toBeInTheDocument()
   })
 })
