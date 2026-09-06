@@ -1,0 +1,136 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook, waitFor } from '@testing-library/react'
+import { HttpResponse, http } from 'msw'
+import { createElement, type ReactNode } from 'react'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { server } from '../../test/setup'
+
+// design D30: "One hook each for cabins and guests, both fetching with
+// include_inactive=true. A test asserts no other module calls /properties
+// or /clients for a lookup. Without this, a deactivated guest's stays
+// render nameless and screen 09 -- which shows deactivated guests BY
+// DESIGN -- breaks." Both hooks are dynamically imported (matching
+// `env.test.ts`/`client.test.ts`'s own discipline): they transitively
+// import `app/api/client.ts`, which reads `env.ts` at module load.
+
+// task 4.10: static regression guard, labelled [TEST] not [RED] -- this
+// pair of hooks is the only source of `/properties`/`/clients` calls at
+// the moment this guard is written, so it cannot fail yet, matching the
+// backend's own equivalent rule (only `useCabins`/`useClients` may fetch
+// these lookups). The regex requires an actual `apiRequest(...)` call
+// naming the path, not a bare string occurrence -- otherwise `schema.gen.ts`'s
+// own `"/properties"`/`"/clients"` OpenAPI path keys (type-level
+// documentation, never a runtime call) would false-positive the scan.
+const LOOKUP_CALL_SITE = /apiRequest(?:<[^>]*>)?\(\s*[`'"][^`'"]*\/(?:properties|clients)\b/
+
+const ALLOWED_LOOKUP_MODULES = ['./useCabins.ts', './useClients.ts']
+
+const appModulesForLookupGuard = import.meta.glob('../**/*.{ts,tsx}', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+})
+
+function isLookupGuardExempt(path: string): boolean {
+  return path.includes('.test.') || path.includes('/test/') || ALLOWED_LOOKUP_MODULES.includes(path)
+}
+
+function renderQueryHook<T>(useHook: () => T) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  function wrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client: queryClient }, children)
+  }
+  return renderHook(useHook, { wrapper })
+}
+
+describe('useCabins / useClients', () => {
+  const originalEnv = { ...import.meta.env }
+
+  beforeEach(() => {
+    import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
+    import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
+  })
+
+  afterEach(() => {
+    Object.assign(import.meta.env, originalEnv)
+  })
+
+  it('useCabins fetches /properties with include_inactive=true', async () => {
+    let capturedUrl: URL | null = null
+    server.use(
+      http.get('http://localhost:8000/properties', ({ request }) => {
+        capturedUrl = new URL(request.url)
+        return HttpResponse.json([])
+      }),
+    )
+
+    const { useCabins } = await import('./useCabins')
+    const { result } = renderQueryHook(useCabins)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(capturedUrl).not.toBeNull()
+    expect(capturedUrl!.searchParams.get('include_inactive')).toBe('true')
+  })
+
+  it('useClients fetches /clients with include_inactive=true', async () => {
+    let capturedUrl: URL | null = null
+    server.use(
+      http.get('http://localhost:8000/clients', ({ request }) => {
+        capturedUrl = new URL(request.url)
+        return HttpResponse.json([])
+      }),
+    )
+
+    const { useClients } = await import('./useClients')
+    const { result } = renderQueryHook(useClients)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(capturedUrl).not.toBeNull()
+    expect(capturedUrl!.searchParams.get('include_inactive')).toBe('true')
+  })
+
+  // [TRIANGULATE] a deactivated cabin/client MUST still come back through
+  // this hook (the whole point of include_inactive=true) -- not merely
+  // that the query string is right, but that the response round-trips.
+  it('[TRIANGULATE] a deactivated cabin still comes back through useCabins', async () => {
+    server.use(
+      http.get('http://localhost:8000/properties', () =>
+        HttpResponse.json([
+          { id: 'a1111111-1111-1111-1111-111111111111', name: 'Casa Azul', created_at: '2026-01-01T00:00:00Z', is_active: false },
+        ]),
+      ),
+    )
+
+    const { useCabins } = await import('./useCabins')
+    const { result } = renderQueryHook(useCabins)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(result.current.data).toEqual([
+      { id: 'a1111111-1111-1111-1111-111111111111', name: 'Casa Azul', created_at: '2026-01-01T00:00:00Z', is_active: false },
+    ])
+  })
+})
+
+describe('lookup call-site guard', () => {
+  it('no module other than useCabins.ts/useClients.ts calls /properties or /clients', () => {
+    const offenders = Object.entries(appModulesForLookupGuard)
+      .filter(([path]) => !isLookupGuardExempt(path))
+      .filter(([, contents]) => LOOKUP_CALL_SITE.test(contents as string))
+      .map(([path]) => path)
+
+    expect(offenders).toEqual([])
+  })
+
+  // Not a tautology: proves the scan itself can see and flag a real
+  // lookup call site, and that it does NOT false-positive on
+  // `schema.gen.ts`'s own path-key strings (the same proof pattern as
+  // 1.22/1.25/2.17/4.7).
+  it('the regex used above detects a real call and ignores a bare path-key string', () => {
+    expect(LOOKUP_CALL_SITE.test("apiRequest('/properties?include_inactive=true')")).toBe(true)
+    expect(LOOKUP_CALL_SITE.test('apiRequest<Client[]>(`/clients?include_inactive=true`)')).toBe(true)
+    expect(LOOKUP_CALL_SITE.test('"/properties": { get: operations["list_properties"] }')).toBe(false)
+  })
+})
