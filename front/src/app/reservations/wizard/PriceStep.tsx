@@ -9,6 +9,7 @@ import {
 } from '../../../shared/copy/reservations'
 import { formatDateRange } from '../../../shared/date/format'
 import { nightsBetween } from '../../../shared/date/nightsBetween'
+import { effectiveTotalCentavos } from '../effectiveTotal'
 import { useCreateReservation } from '../useCreateReservation'
 import type { WizardCabin, WizardDates, WizardGuest, WizardPriceMode } from './store'
 
@@ -42,7 +43,7 @@ export function PriceStep({ cabin, dates, guest, initialPriceMode, initialAmount
 
   const amountCentavos = amountPesos === '' ? 0 : Math.round(Number(amountPesos) * 100)
   const nights = nightsBetween(dates.checkIn, dates.checkOut)
-  const totalCentavos = priceMode === 'per_night' ? amountCentavos * nights : amountCentavos
+  const totalCentavos = effectiveTotalCentavos(priceMode, amountCentavos, nights)
 
   function updateMode(mode: WizardPriceMode) {
     setPriceMode(mode)

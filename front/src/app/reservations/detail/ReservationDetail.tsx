@@ -4,6 +4,7 @@ import { moneyStillHeldReminder, RESERVATION_DETAIL_COPY } from '../../../shared
 import { formatDayMonth } from '../../../shared/date/format'
 import { nightsBetween } from '../../../shared/date/nightsBetween'
 import { formatMoney } from '../../../shared/money/formatMoney'
+import { balanceLine } from '../balanceLine'
 import { displayBalance } from '../displayBalance'
 import { useCabins } from '../useCabins'
 import { useClients } from '../useClients'
@@ -30,16 +31,6 @@ import { PaymentSheet } from './PaymentSheet'
 // blank.
 
 type OpenSheet = 'payment' | 'refund' | 'cancel' | null
-
-function balanceLine(balanceCentavos: number): string | null {
-  if (balanceCentavos > 0) return RESERVATION_DETAIL_COPY.owes
-  if (balanceCentavos < 0) return RESERVATION_DETAIL_COPY.refundOwed
-  // Zero -- nothing is owed in either direction, so no directional line is
-  // rendered at all. This is also the whole of 6.3/6.4: `displayBalance()`
-  // reports `0` for a cancelled stay, so a cancelled reservation reaches
-  // this branch and prints none of the three phrases the spec forbids it.
-  return null
-}
 
 export function ReservationDetail() {
   const { id = null } = useParams<{ id: string }>()

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { PriceMode } from '../effectiveTotal'
 import type { PlainDate } from '../../../shared/date/parsePlainDate'
 
 // design D29/D30, task 5.2: the SECOND and LAST of the app's exactly two
@@ -15,7 +16,10 @@ import type { PlainDate } from '../../../shared/date/parsePlainDate'
 // reload") nothing in this change asks for. A reload or a closed tab loses
 // an in-progress draft -- an accepted residual, not a bug.
 
-export type WizardPriceMode = 'per_night' | 'total'
+// Aliased, not re-declared: `effectiveTotal.ts` owns the one canonical
+// spelling of this union (6.25), so the wizard and the edit screen cannot
+// drift into two ideas of what a price mode is.
+export type WizardPriceMode = PriceMode
 
 export type WizardCabin = {
   readonly id: string

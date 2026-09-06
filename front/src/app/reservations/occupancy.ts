@@ -33,18 +33,33 @@ export type OccupiedNightsOptions = {
  * site must write `{excludeReservationId: null}` explicitly rather than
  * getting the correct-for-creating case by forgetting a parameter.
  */
+/**
+ * Every NIGHT in the half-open range `[checkIn, checkOut)` -- the check-out
+ * day is not a night, the same rule `shared/calendar/segments.ts` enforces
+ * and the same one `formatDateRange` deliberately does NOT compensate for.
+ *
+ * Extracted at 6.29 because the edit screen needs the identical
+ * enumeration for a different question -- "which of the nights she just
+ * asked for are still free?" -- and a second copy of this loop would be a
+ * second chance to get the half-open boundary wrong.
+ */
+export function nightsInRange(checkIn: PlainDate, checkOut: PlainDate): PlainDate[] {
+  const nights: PlainDate[] = []
+  let cursor = Temporal.PlainDate.from(checkIn)
+  const end = Temporal.PlainDate.from(checkOut)
+  while (Temporal.PlainDate.compare(cursor, end) < 0) {
+    nights.push(parsePlainDate(cursor.toString()))
+    cursor = cursor.add({ days: 1 })
+  }
+  return nights
+}
+
 export function occupiedNightsFor(stays: readonly OccupancyStay[], options: OccupiedNightsOptions): ReadonlySet<string> {
   const nights = new Set<string>()
 
   for (const stay of stays) {
     if (stay.id === options.excludeReservationId) continue
-
-    let cursor = Temporal.PlainDate.from(stay.checkIn)
-    const end = Temporal.PlainDate.from(stay.checkOut)
-    while (Temporal.PlainDate.compare(cursor, end) < 0) {
-      nights.add(parsePlainDate(cursor.toString()))
-      cursor = cursor.add({ days: 1 })
-    }
+    for (const night of nightsInRange(stay.checkIn, stay.checkOut)) nights.add(night)
   }
 
   return nights

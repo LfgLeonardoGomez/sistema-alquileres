@@ -142,15 +142,30 @@ const appRoutes: RouteObject[] = [
   // module's own recurring "built, verified, never wired" defect, with the
   // detail screen reachable by nothing. It is also a hard prerequisite for
   // 6.30/6.31, where `/reserva/:id/editar` must REDIRECT here on a
-  // cancelled stay. `/reserva/:id/editar` itself stays a forward reference
-  // for one more commit (Phase 6b, task 6.17) -- the edit link on the
-  // detail screen therefore lands on the catch-all until then, the same
-  // temporary and deliberate gap `/login` carried until 3.14.
+  // cancelled stay.
   {
     path: '/reserva/:id',
     lazy: async () => {
       const { ReservationDetail } = await import('./app/reservations/detail/ReservationDetail')
       return { Component: ReservationDetail }
+    },
+  },
+  // Phase 6b, task 6.17 -- the last forward reference in D31's routing
+  // table, and the destination the detail screen's "Editar la reserva" link
+  // has been pointing at since 6.15 (it landed on the catch-all until now,
+  // the same temporary and deliberate gap `/login` carried until 3.14).
+  //
+  // A full screen with its own route, never a modal over the detail (D34):
+  // an editor carrying a month grid does not fit a bottom sheet on an 874px
+  // phone. Being a real route is also what makes 6.30/6.31's guard
+  // necessary -- a bookmark, a back button or a stale tab can reach this URL
+  // for a stay that has since been cancelled, which no hidden button can
+  // prevent.
+  {
+    path: '/reserva/:id/editar',
+    lazy: async () => {
+      const { EditReservation } = await import('./app/reservations/edit/EditReservation')
+      return { Component: EditReservation }
     },
   },
 ]

@@ -39,9 +39,53 @@ const FORBIDDEN_WORDS = [
 // forget.
 const copyModules = import.meta.glob('../shared/copy/**/*.{ts,tsx}', { eager: true })
 
+// **Gap found and closed on 2026-09-06, during Phase 6b.** The original
+// `collectStrings` walked strings, arrays and objects -- and therefore
+// skipped every FUNCTION export, because `typeof fn` is `'function'`,
+// neither `'object'` nor `'string'`. More than half of this app's copy is
+// written as a template function (`cancelConfirmationBody`,
+// `rescaleHelper`, `moneyStillHeldReminder`, ...), so the guard had been
+// blind to all of it since 1.22 -- and task 6.44's own note claiming 6.33's
+// reminder was "covered with nothing to register" was, in fact, wrong.
+//
+// Proved rather than assumed before fixing: injecting the literal words
+// "error conflicto 409" into `moneyStillHeldReminder`'s template left this
+// test GREEN. The same injection into `GENERIC_ERROR_COPY` (a plain string
+// export) fails it, exactly as 1.22 demonstrated -- which is why the hole
+// stayed invisible.
+//
+// The fix invokes each exported function with a small set of argument
+// shapes and scans whatever strings come back. A function whose signature
+// matches none of them simply throws and is skipped, so this can never
+// break on an unusual copy helper -- and the `reachesTemplateFunctions`
+// assertion below is what stops that tolerance from quietly degrading back
+// into scanning nothing.
+const SAMPLE_ARGUMENTS: readonly (readonly unknown[])[] = [
+  [],
+  ['1'],
+  [1],
+  ['1', '1'],
+  [1, '1'],
+  ['1', '1', 1],
+  [['1', '1']],
+  ['1', null],
+]
+
 function collectStrings(value: unknown, into: string[]): void {
   if (typeof value === 'string') {
     into.push(value)
+    return
+  }
+  if (typeof value === 'function') {
+    for (const args of SAMPLE_ARGUMENTS) {
+      try {
+        const produced: unknown = (value as (...callArgs: readonly unknown[]) => unknown)(...args)
+        if (typeof produced === 'string') into.push(produced)
+      } catch {
+        // Wrong argument shape for this particular copy function -- another
+        // tuple in the list will fit it. Nothing to report.
+      }
+    }
     return
   }
   if (Array.isArray(value)) {
@@ -63,6 +107,13 @@ describe('copy glossary', () => {
     // Not a tautology: this scan exercises real exported copy (1.21's error
     // table), and fails the moment any string in `shared/copy/**` regresses.
     expect(strings.length).toBeGreaterThan(0)
+
+    // And it genuinely reaches TEMPLATE-FUNCTION copy, not only the plain
+    // string constants it saw before Phase 6b. Pinned against a real
+    // sentence fragment rather than a count, so the fix above cannot rot
+    // back into a silent no-op if a future refactor breaks the invocation.
+    const reachesTemplateFunctions = strings.some((copy) => copy.includes('Se calcula solo:'))
+    expect(reachesTemplateFunctions).toBe(true)
 
     const offenders = strings.flatMap((copy) => {
       const lower = copy.toLowerCase()

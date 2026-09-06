@@ -100,6 +100,55 @@ export function cancelConfirmationBody(formattedRange: string, cabinName: string
   return `Las noches del ${formattedRange} en ${cabinName} quedan libres para otra persona. Los pagos anotados quedan guardados.`
 }
 
+// --- Phase 6b: editing a saved reservation (screen not drawn) -----------
+//
+// Design D34. Editing entered scope by the owner's own decision after the
+// proposal was written, so the handoff draws no edit screen at all -- every
+// string below is this run's own invention, flagged here rather than
+// silently presented as drawn, and written to the register of the strings
+// above it. The picker chrome, the price control and the money labels are
+// deliberately NOT re-invented here: the edit screen imports
+// `RESERVATION_WIZARD_COPY` and `RESERVATION_DETAIL_COPY` for those, so
+// `Por noche`, `Monto`, `Saldo` and `Le tenés que devolver` have exactly one
+// spelling each in the whole app.
+export const RESERVATION_EDIT_COPY = {
+  title: 'Cambiar las noches o el precio',
+  guardar: 'Guardar los cambios',
+} as const
+
+/**
+ * Joins already-formatted day/month strings the way a person writes a list:
+ * `el 9/9`, `el 9/9 y el 10/9`, `el 9/9, el 10/9 y el 11/9`. Takes the
+ * strings already rendered by `formatDayMonth`, never dates -- this module
+ * goes on knowing nothing about how a date is spelled, exactly as it knows
+ * nothing about how money is.
+ */
+export function nightListPhrase(formattedNights: readonly string[]): string {
+  const withArticle = formattedNights.map((night) => `el ${night}`)
+  if (withArticle.length <= 1) return withArticle.join('')
+  return `${withArticle.slice(0, -1).join(', ')} y ${withArticle[withArticle.length - 1]}`
+}
+
+/**
+ * D32's resolution step 1, made real: "A call site may pass a more specific
+ * sentence for a specific `code` -- the same `409 dates_unavailable` reads
+ * differently in the wizard than on the edit screen."
+ *
+ * The wizard's version is the generic table row ("Esas noches ya están
+ * ocupadas. Elegí otras."), which is all it can say: a new stay has no
+ * nights of its own to compare against. An EDIT has a specific range she
+ * just asked for, so this one names the cabin and tells her which of those
+ * nights survived -- the difference between "try again" and "try again from
+ * the 9th".
+ *
+ * `freeNights` arrives already formatted and already joined, so the whole
+ * of what this function does is choose between two sentences.
+ */
+export function editDatesUnavailable(cabinName: string, freeNights: string | null): string {
+  if (freeNights === null) return `${cabinName} ya está ocupada todas esas noches. Elegí otras.`
+  return `${cabinName} ya está ocupada esas noches. De las que elegiste, todavía están libres ${freeNights}.`
+}
+
 // --- Phase 6c: a cancelled stay that still holds money -------------------
 //
 // Task 6.33, and the owner's own decision of 2026-09-06: "que la
