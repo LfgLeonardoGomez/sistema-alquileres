@@ -45,6 +45,16 @@ describe('keys', () => {
     expect(keys.reservation('a-id')).not.toEqual(keys.reservation('b-id'))
     expect(keys.reservation('a-id')).not.toEqual(keys.reservations())
   })
+
+  // task 4.14's incidental addition: the reservation calendar screen fetches
+  // per cabin, so its key must vary by `cabinId` while still starting with
+  // the same `'reservations'` prefix the bare list key uses -- D30's
+  // invalidation table invalidates by that shared prefix.
+  it('produces a distinct, stable key per cabin, nested under the reservations prefix', () => {
+    expect(keys.reservationsByCabin('cabin-a')).toEqual(keys.reservationsByCabin('cabin-a'))
+    expect(keys.reservationsByCabin('cabin-a')).not.toEqual(keys.reservationsByCabin('cabin-b'))
+    expect(keys.reservationsByCabin('cabin-a')[0]).toBe(keys.reservations()[0])
+  })
 })
 
 describe('query-key literal guard', () => {

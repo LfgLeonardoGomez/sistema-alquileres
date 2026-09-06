@@ -1,4 +1,6 @@
-import { createBrowserRouter, type RouteObject } from 'react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createBrowserRouter, Outlet, type RouteObject } from 'react-router'
+import { queryClient } from './shared/mutation/queryClient'
 import { ROUTING_COPY } from './shared/copy/routing'
 
 // design D31 + the Phase 2 addendum (gap 1). React Router v7, declarative,
@@ -13,6 +15,34 @@ import { ROUTING_COPY } from './shared/copy/routing'
 // handoff's register, and what the owner pastes into WhatsApp. The tenant
 // slug enters the app only here, at the URL -- never at login for an
 // authenticated route (D31's own point, out of this task list's scope).
+//
+// **Defect fixed here, task 4.14.** `shared/mutation/queryClient.ts` has
+// existed since Phase 1 (1.26/1.27), its retry policy is tested (D30), and
+// it was never actually provided to the React tree -- `main.tsx` mounted
+// bare `<RouterProvider>`. Nothing before `CalendarScreen` (task 4.14) ever
+// called `useQuery` inside a mounted component (`HomeScreen.tsx` uses a
+// bare `useEffect` + `apiRequest`), so the gap went unnoticed through three
+// phases, the same "built, verified, never wired" shape as the
+// `import/no-restricted-paths` resolver gap (0.5/1.28) and the missing
+// `/login` route (3.14) before it.
+//
+// Fixed at THIS module's root, not in `main.tsx` -- a `<RootLayout>` with
+// no `path`, wrapping every route (both trees) in `<Outlet/>` inside
+// `<QueryClientProvider>`. This is the one place that guarantees every
+// consumer of `routeConfig`/`router` gets the provider, not just
+// `main.tsx`'s own render call: every test in this file (and
+// `CalendarScreen.test.tsx`'s own real-router test) builds its router
+// straight from `routeConfig` via `createMemoryRouter`, bypassing
+// `main.tsx` entirely -- wrapping only `main.tsx` would have left every one
+// of those tests (and any future one built the same way) exactly as
+// exposed as production was.
+function RootLayout() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Outlet />
+    </QueryClientProvider>
+  )
+}
 
 // --- Public tree: no auth, ever. --------------------------------------
 //
@@ -77,8 +107,8 @@ const appRoutes: RouteObject[] = [
   {
     path: '/calendario',
     lazy: async () => {
-      const { CalendarPlaceholder } = await import('./app/shell/PlaceholderScreens')
-      return { Component: CalendarPlaceholder }
+      const { CalendarScreen } = await import('./app/calendar/CalendarScreen')
+      return { Component: CalendarScreen }
     },
   },
   {
@@ -102,9 +132,10 @@ function NotFoundScreen() {
 }
 
 export const routeConfig: RouteObject[] = [
-  ...publicRoutes,
-  ...appRoutes,
-  { path: '*', Component: NotFoundScreen },
+  {
+    Component: RootLayout,
+    children: [...publicRoutes, ...appRoutes, { path: '*', Component: NotFoundScreen }],
+  },
 ]
 
 // The one router instance the app renders. Task 3.14's `client.ts` already
