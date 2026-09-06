@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { server } from './test/setup'
 import { SESSION_COPY } from './shared/copy/session'
 import { ROUTING_COPY } from './shared/copy/routing'
+import { SHELL_COPY } from './shared/copy/shell'
 
 // design D31 + the Phase 2 addendum (gap 1): "one explicit routes.tsx",
 // both trees visibly separate, public tree lazy(). This is the module that
@@ -98,5 +99,29 @@ describe('routes', () => {
 
     expect(await screen.findByLabelText(SESSION_COPY.emailLabel)).toBeInTheDocument()
     expect(screen.queryByText(ROUTING_COPY.notFound)).not.toBeInTheDocument()
+  })
+
+  // Task 3.23's "never a dead link" -- every one of `TabBar`'s four
+  // destinations must resolve to real, mounted content, not the catch-all
+  // `NotFoundScreen` `/login` itself fell through to before 3.14 wired it
+  // (see that test's own note above for the exact same failure mode this
+  // guards against for the other four routes).
+  it('mounts a real screen -- never the not-found catch-all -- at /inicio, /calendario, /huespedes, and /cabanas', async () => {
+    server.use(
+      http.get('http://localhost:8000/dashboard/summary', () =>
+        HttpResponse.json({ collected: '0.00', occupied_nights: 0, available_nights: 0, properties: [] }),
+      ),
+    )
+    const { routeConfig } = await import('./routes')
+
+    for (const path of ['/inicio', '/calendario', '/huespedes', '/cabanas']) {
+      const router = createMemoryRouter(routeConfig, { initialEntries: [path] })
+      const { unmount } = render(<RouterProvider router={router} />)
+
+      expect(await screen.findByRole('navigation', { name: SHELL_COPY.tabBarLabel })).toBeInTheDocument()
+      expect(screen.queryByText(ROUTING_COPY.notFound)).not.toBeInTheDocument()
+
+      unmount()
+    }
   })
 })

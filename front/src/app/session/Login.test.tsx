@@ -124,4 +124,16 @@ describe('LoginScreen', () => {
     expect(screen.queryByText(/olvid.*contraseñ/i)).not.toBeInTheDocument()
     expect(document.querySelector('a[href*="reset"], a[href*="olvid"]')).toBeNull()
   })
+
+  // Triangulates task 3.15/3.16's real-401-redirect case (`client.test.tsx`):
+  // a plain visit to `/login` (typed directly, bookmarked, or opened fresh)
+  // carries no navigation state at all, so the approved re-entry copy must
+  // NOT appear -- it is conditional on an actual redirect, not always-on
+  // screen chrome.
+  it('renders no re-entry message on a plain visit, only on an actual 401 redirect', async () => {
+    const { LoginScreen } = await import('./LoginScreen')
+    renderLoginAt(LoginScreen, '/login')
+
+    expect(screen.queryByText(SESSION_COPY.expiredMessage)).not.toBeInTheDocument()
+  })
 })

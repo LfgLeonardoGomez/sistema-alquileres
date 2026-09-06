@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useLocation, useSearchParams } from 'react-router'
 import { apiRequest } from '../api/client'
 import { SESSION_COPY } from '../../shared/copy/session'
 import { env } from '../../env'
@@ -17,11 +17,25 @@ type LoginResponse = {
   readonly token_type: string
 }
 
+// Task 3.15/3.16, D29(c): the shape `client.ts`'s 401 interceptor attaches
+// to its `router.navigate('/login', { state: ... })` call. Read here, never
+// written here -- this screen only ever observes the flag a redirect left
+// behind.
+type LoginLocationState = { readonly expired?: boolean } | null
+
 export function LoginScreen() {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const setToken = useSessionStore((state) => state.setToken)
+
+  // `location.state` is `null` on a plain visit to `/login` (typing it in
+  // the address bar, or a bookmark) and only carries `{expired: true}` when
+  // `client.ts`'s 401 interceptor performed the navigation -- the
+  // structural difference between "she needs to sign in again" and "she is
+  // just opening the app".
+  const showExpiredMessage = (location.state as LoginLocationState)?.expired === true
 
   // D31: "the login route reads it from `?tenant=` if present, otherwise
   // from the build-time `VITE_TENANT_SLUG`" -- resolved here, at submit
@@ -40,21 +54,24 @@ export function LoginScreen() {
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(event)}>
-      <label>
-        {SESSION_COPY.emailLabel}
-        <input type="email" name="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-      </label>
-      <label>
-        {SESSION_COPY.passwordLabel}
-        <input
-          type="password"
-          name="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-        />
-      </label>
-      <button type="submit">{SESSION_COPY.submit}</button>
-    </form>
+    <>
+      {showExpiredMessage ? <p>{SESSION_COPY.expiredMessage}</p> : null}
+      <form onSubmit={(event) => void handleSubmit(event)}>
+        <label>
+          {SESSION_COPY.emailLabel}
+          <input type="email" name="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+        </label>
+        <label>
+          {SESSION_COPY.passwordLabel}
+          <input
+            type="password"
+            name="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+        <button type="submit">{SESSION_COPY.submit}</button>
+      </form>
+    </>
   )
 }

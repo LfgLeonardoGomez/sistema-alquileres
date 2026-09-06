@@ -68,7 +68,12 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
 
   if (response.status === 401) {
     useSessionStore.getState().clearToken()
-    router.navigate('/login')
+    // D29(c) (approved 2026-09-05, task 3.15/3.16): a `state.expired` flag
+    // on the navigation, not a query param or a second store field, so
+    // `LoginScreen` can tell "she was just redirected here by an expired
+    // token" apart from "she opened /login directly" and show the approved
+    // copy only in the first case.
+    router.navigate('/login', { state: { expired: true } })
     throw normalise(response.status, await parseJsonBody(response))
   }
 

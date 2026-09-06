@@ -154,7 +154,11 @@ describe('apiRequest', () => {
 
       await expect(apiRequest('/reservations')).rejects.toEqual({ status: 401, code: null })
       expect(useSessionStore.getState().token).toBeNull()
-      expect(navigateSpy).toHaveBeenCalledWith('/login')
+      // Task 3.16 adds a `state.expired` flag to this same call (D29(c)) --
+      // updated here rather than left to silently start failing, since this
+      // is a real behavioural change to the interceptor's own call shape,
+      // not a rename.
+      expect(navigateSpy).toHaveBeenCalledWith('/login', { state: { expired: true } })
 
       useSessionStore.getState().clearToken()
     })
@@ -208,6 +212,35 @@ describe('apiRequest', () => {
 
       expect(await screen.findByLabelText(SESSION_COPY.emailLabel)).toBeInTheDocument()
       expect(useSessionStore.getState().token).toBeNull()
+
+      useSessionStore.getState().clearToken()
+    })
+
+    // Task 3.15/3.16, D29(c) (approved 2026-09-05): the approved re-entry
+    // copy renders above the login form specifically on a 401-triggered
+    // redirect, not merely "somewhere in the login screen at all times" --
+    // the router.navigate call carries a `state.expired` flag for
+    // `LoginScreen` to read, since a plain visit to `/login` has no such
+    // state (see `Login.test.tsx`'s own triangulation for that negative
+    // case).
+    it('shows the approved re-entry message above the login form after a 401 redirect, with no technical wording', async () => {
+      server.use(
+        http.get('http://localhost:8000/reservations', () =>
+          HttpResponse.json({ detail: 'Invalid or expired token', code: null }, { status: 401 }),
+        ),
+      )
+      const { router } = await import('../../routes')
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().setToken('a-valid-looking-token')
+
+      render(<RouterProvider router={router} />)
+
+      const { apiRequest } = await import('./client')
+      await expect(apiRequest('/reservations')).rejects.toEqual({ status: 401, code: null })
+
+      const message = await screen.findByText(SESSION_COPY.expiredMessage)
+      expect(message).toBeInTheDocument()
+      expect(message.textContent).not.toMatch(/token|sesión|expiró/i)
 
       useSessionStore.getState().clearToken()
     })

@@ -37,10 +37,15 @@ const publicRoutes: RouteObject[] = [
 
 // --- Authenticated tree: bearer, D31. -----------------------------------
 //
-// `/login` only, so far. Task 3.1's BLOCKING human-approval gate (D29,
-// CRITICAL domain) is approved (2026-09-05) and Phase 3's session work is
-// implemented -- `/inicio` and the rest of the authenticated tree still
-// don't exist as of this task, so they are not wired here either.
+// `/login`, plus the four tab-bar destinations as of tasks 3.17-3.23:
+// `/inicio` is the real, built Inicio screen (`app/home/HomeScreen.tsx`);
+// `/calendario`, `/huespedes`, `/cabanas` are instructive placeholders
+// (`app/shell/PlaceholderScreens.tsx`) until Phases 4/7/8 build the real
+// screens -- wired now so `TabBar`'s own links resolve to real, mounted
+// content rather than the catch-all `NotFoundScreen` (task 3.23's "never a
+// dead link"). The rest of D31's authenticated table (`/reserva/:id`,
+// `/reserva/nueva/:paso`, etc.) still doesn't exist -- those remain
+// forward references, the same status `/login` had here until 3.14.
 //
 // `lazy()` here for the same reason as the public tree above, plus one
 // more: `LoginScreen` -> `client.ts` -> `router` (this module) would be a
@@ -49,13 +54,45 @@ const publicRoutes: RouteObject[] = [
 // time, so the cycle this file's other half creates never actually forms --
 // `client.ts`'s own top-level `import { router } from '../../routes'`
 // (task 3.14) stays exactly as approved, calling `router.navigate('/login')`
-// through the router, never `window.location`.
+// through the router, never `window.location`. `HomeScreen` transitively
+// imports `client.ts` too (its own dashboard fetch), so it needs the same
+// `lazy()` treatment for the same reason; the three placeholders don't, but
+// are lazy-loaded anyway for consistency with every other route in this
+// file.
 const appRoutes: RouteObject[] = [
   {
     path: '/login',
     lazy: async () => {
       const { LoginScreen } = await import('./app/session/LoginScreen')
       return { Component: LoginScreen }
+    },
+  },
+  {
+    path: '/inicio',
+    lazy: async () => {
+      const { HomeScreen } = await import('./app/home/HomeScreen')
+      return { Component: HomeScreen }
+    },
+  },
+  {
+    path: '/calendario',
+    lazy: async () => {
+      const { CalendarPlaceholder } = await import('./app/shell/PlaceholderScreens')
+      return { Component: CalendarPlaceholder }
+    },
+  },
+  {
+    path: '/huespedes',
+    lazy: async () => {
+      const { GuestsPlaceholder } = await import('./app/shell/PlaceholderScreens')
+      return { Component: GuestsPlaceholder }
+    },
+  },
+  {
+    path: '/cabanas',
+    lazy: async () => {
+      const { CabinsPlaceholder } = await import('./app/shell/PlaceholderScreens')
+      return { Component: CabinsPlaceholder }
     },
   },
 ]
