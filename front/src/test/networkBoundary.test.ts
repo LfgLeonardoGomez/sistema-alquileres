@@ -19,7 +19,13 @@ import { describe, expect, it } from 'vitest'
 // actual intent: any file NOT on this list gaining a `fetch` call is still
 // a real regression, and any addition to the list must be a deliberate,
 // reviewed edit here, not an incidental one elsewhere.
-const ALLOWED_FETCH_MODULES = ['src/app/api/client.ts']
+// Extended on purpose for task 2.19/2.30, not loosened: `src/public/api.ts`
+// is the SECOND, equally legitimate call site design D31 predicted --
+// public/'s own fetch, with no token parameter in its signature at all.
+// Any file NOT on this list gaining a `fetch` call is still a real
+// regression; adding to this list is deliberate and reviewed here, exactly
+// as 1.25's own note anticipated.
+const ALLOWED_FETCH_MODULES = ['src/app/api/client.ts', 'src/public/api.ts']
 
 const DIRECT_NETWORK_CALL = /\bfetch\s*\(|\bnew\s+XMLHttpRequest\b/
 
