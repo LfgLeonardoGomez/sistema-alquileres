@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Playwright (task 9.5) -- run artifacts, never the spec or config itself
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # Per-developer secrets (design D37) -- .env.example is committed, .env is not
 .env
 .env.*

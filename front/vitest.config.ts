@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 // Design D26: every date, calendar and formatting test must produce a
 // byte-identical result regardless of the host machine's time zone, because
@@ -23,6 +23,10 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // Task 9.5: `e2e/**` is Playwright's own suite (`npm run test:e2e`),
+    // never Vitest's -- kept fully separate so it cannot slow down or
+    // destabilise this 645-test unit run.
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     projects: TZ_PROJECTS.map(({ name, tz }) => ({
       extends: true,
       test: {

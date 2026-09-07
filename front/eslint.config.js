@@ -6,7 +6,13 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'coverage'] },
+  // `e2e/**` and `playwright.config.ts` (task 9.5) are Node-side Playwright
+  // orchestration, not app code: they run outside the Vite bundle, are
+  // excluded from both `tsconfig.app.json` and `tsconfig.node.json`, and
+  // are exempt from D26's `Date` ban for the same reason -- there is no
+  // plain-date bug to prevent in test scaffolding that just needs "10 days
+  // from now" to click a calendar cell.
+  { ignores: ['dist', 'node_modules', 'coverage', 'e2e', 'playwright.config.ts', 'playwright-report', 'test-results'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
