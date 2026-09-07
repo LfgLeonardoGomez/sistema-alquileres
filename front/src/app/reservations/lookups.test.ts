@@ -35,7 +35,23 @@ import { server } from '../../test/setup'
 // closing quote) -- a nested `/id` segment no longer matches.
 const LOOKUP_CALL_SITE = /apiRequest(?:<[^>]*>)?\(\s*[`'"][^`'"]*\/(?:properties|clients)(?=[?'"`])/
 
-const ALLOWED_LOOKUP_MODULES = ['./useCabins.ts', './useClients.ts']
+// task 8.2, a real discovery made by actually running this guard against
+// the new cabin-directory code, not a guessed exemption: `useAddCabin.ts`
+// (`POST /properties`, no id, no query string) false-positives this regex
+// for exactly the reason 7.14's own note already flagged for the OTHER
+// direction -- the boundary this pattern checks is "does the path end
+// right after `properties`/`clients`", which is true of a bare-resource
+// CREATE just as much as it is of the LIST fetch this guard actually
+// exists to police (D30: "one hook each... fetching with
+// include_inactive=true"). `useFindOrCreateGuest.ts`'s own `POST /clients`
+// escapes this same regex by calling `apiRequestWithStatus`, a different
+// function name the pattern doesn't match -- an accident of that call
+// needing the status code, not a deliberate dodge, and not a shape
+// `useAddCabin.ts` has any reason to imitate (creating a cabin never needs
+// the 200-vs-201 distinction `useFindOrCreateGuest.ts` decodes). An
+// explicit allowlist entry, not a regex change, keeps the guard strict
+// everywhere else a real second lookup site could still appear.
+const ALLOWED_LOOKUP_MODULES = ['./useCabins.ts', './useClients.ts', '../cabins/useAddCabin.ts']
 
 const appModulesForLookupGuard = import.meta.glob('../**/*.{ts,tsx}', {
   eager: true,

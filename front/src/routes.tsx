@@ -123,11 +123,15 @@ const appRoutes: RouteObject[] = [
       return { Component: GuestDirectory }
     },
   },
+  // Phase 8, `cabin-directory`. Screen 08. Replaces the placeholder --
+  // `CabinsPlaceholder` itself stays, still exercised by `TabBar.test.tsx`'s
+  // own router fixture, the exact precedent `/huespedes`'s own comment
+  // records for `GuestsPlaceholder`.
   {
     path: '/cabanas',
     lazy: async () => {
-      const { CabinsPlaceholder } = await import('./app/shell/PlaceholderScreens')
-      return { Component: CabinsPlaceholder }
+      const { CabinDirectory } = await import('./app/cabins/CabinDirectory')
+      return { Component: CabinDirectory }
     },
   },
   // Phase 5, D31's own routing table: the four-step reservation wizard.
