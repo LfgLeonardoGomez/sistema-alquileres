@@ -20,9 +20,24 @@ for occupancy.
 - WHEN screen 02 is rendered
 - THEN no element on the screen MUST display `450000`, `$ 450.000`, or any other money figure
 
-### Requirement: Occupied-Nights Progress Reflects The Argentina-Time Month
+### Requirement: Occupied-Nights Progress Reflects The Argentina-Time Month (SUPERSEDED 2026-09-07 — see below)
 
 The "Noches ocupadas" card's numerator, denominator, and progress-bar fraction MUST reflect the month containing "today" as computed in `America/Argentina/Buenos_Aires`, not the UTC month.
+
+> **Superseded 2026-09-07.** Using the app, the owner replaced this screen's
+> "Noches ocupadas" occupancy card with a "Próximas llegadas" card (one row
+> per cabin, showing that cabin's own next arrival — see
+> `front/src/app/home/UpcomingArrivals.tsx`). Screen 02 no longer renders an
+> occupied-nights progress bar at all, so this requirement no longer applies
+> to Home. Kept here, not deleted, as the record of what was true before the
+> owner's decision — the same way this project records corrections rather
+> than silently repairing them. The underlying claim this requirement made
+> (a dashboard window must be computed in Argentina time, not UTC) did not
+> stop being true elsewhere: `cabin-directory`'s own "Occupied-Nights-This-
+> Month Reuses The Dashboard's Per-Property Breakdown" requirement still
+> depends on the same `useDashboardSummary()` window, and its own test now
+> carries this exact trap (`front/src/app/cabins/CabinDirectory.test.tsx`).
+> The three other requirements in this spec are unaffected and still stand.
 
 #### Scenario: Near a UTC month rollover, the AR month is still shown
 

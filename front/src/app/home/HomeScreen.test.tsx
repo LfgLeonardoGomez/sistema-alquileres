@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
@@ -10,15 +11,26 @@ import { HOME_COPY } from '../../shared/copy/home'
 import { SESSION_COPY } from '../../shared/copy/session'
 import { SHELL_COPY } from '../../shared/copy/shell'
 
-// home-summary spec (screen 02, "deliberately empty"): one occupancy card,
-// one always-reachable action, and structurally no revenue figure -- even
-// though `GET /dashboard/summary` (back/app/schemas/dashboard.py) returns
-// `collected` in the very same response. Rendered through a router (not a
-// bare prop), the same `renderAtSlug`/`renderLoginAt` idiom every earlier
-// screen's own test file established, since the primary action must prove
-// it navigates via the router, not merely that a handler was called.
+// home-summary spec (screen 02): one always-reachable action, and,
+// following the owner's live-review decision (2026-09-07), one "Próximas
+// llegadas" card (`UpcomingArrivals.tsx`) in place of the original
+// occupancy card -- structurally no revenue figure either way, even though
+// the reservation data `UpcomingArrivals` reads from (`useReservations()`)
+// carries real price/paid figures in the very same records. Rendered
+// through a router (not a bare prop), the same `renderAtSlug`/
+// `renderLoginAt` idiom every earlier screen's own test file established,
+// since the primary action must prove it navigates via the router, not
+// merely that a handler was called.
 
+// `UpcomingArrivals` (replacing the occupancy card, 2026-09-07) reads
+// through `useCabins()`/`useClients()`/`useReservations()` -- all
+// TanStack Query hooks -- so this screen now needs a `QueryClientProvider`
+// in its render tree, the same `CabinDirectory.test.tsx`/
+// `GuestDirectory.test.tsx` own precedent for any screen composing those
+// hooks. `retry: false` keeps a genuinely-unmocked endpoint's error
+// surfacing immediately rather than retried into the test's own timeout.
 function renderHomeScreen(Component: ComponentType) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter(
     [
       { path: '/inicio', Component },
@@ -28,7 +40,11 @@ function renderHomeScreen(Component: ComponentType) {
     ],
     { initialEntries: ['/inicio'] },
   )
-  const view = render(<RouterProvider router={router} />)
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
   return { ...view, router }
 }
 
@@ -40,6 +56,27 @@ function dashboardHandler(
     onRequest?.(new URL(request.url))
     return HttpResponse.json({ ...response, properties: [] })
   })
+}
+
+// `UpcomingArrivals` (via `useUpcomingArrivals`) reuses `useCabins()`/
+// `useClients()`/`useReservations()` verbatim -- these three fixtures are
+// this file's own instance of the same "mock every endpoint the screen
+// actually fetches" convention `CabinDirectory.test.tsx`/
+// `GuestDirectory.test.tsx` already established for those hooks.
+type CabinFixture = { id: string; name: string; is_active: boolean }
+type ClientFixture = { id: string; full_name: string; phone: string; email: string | null; national_id: string | null; is_active: boolean }
+type ReservationFixture = Record<string, unknown>
+
+function cabinsHandler(cabins: readonly CabinFixture[]) {
+  return http.get('http://localhost:8000/properties', () => HttpResponse.json(cabins))
+}
+
+function clientsHandler(clients: readonly ClientFixture[]) {
+  return http.get('http://localhost:8000/clients', () => HttpResponse.json(clients))
+}
+
+function reservationsHandler(reservations: readonly ReservationFixture[]) {
+  return http.get('http://localhost:8000/reservations', () => HttpResponse.json(reservations))
 }
 
 function mockTodayAt(instant: string) {
@@ -62,55 +99,68 @@ describe('HomeScreen', () => {
     vi.restoreAllMocks()
   })
 
-  // home-summary spec's "No Revenue Figure Is Ever Rendered": the API
-  // response carries a nonzero `collected`, and NO element anywhere in the
-  // rendered output may show `450000`, `$ 450.000`, or any other money
-  // figure -- structural absence, not a hidden-but-mounted element (checked
-  // via `container.innerHTML`, which covers attributes and comments too).
-  it('renders no revenue figure at all, even though the API reports a nonzero collected amount', async () => {
+  // home-summary spec's "No Revenue Figure Is Ever Rendered". Re-anchored
+  // (2026-09-07) on the "Próximas llegadas" card that replaced the
+  // occupancy card: the reservation this fixture supplies carries a
+  // nonzero `price_total`/`paid_amount`, flowing through the exact same
+  // `useReservations()` call `UpcomingArrivals` reuses to find each
+  // cabin's next arrival -- and still, NO element anywhere in the rendered
+  // output may show `450000`, `$ 450.000`, or any other money figure --
+  // structural absence, not a hidden-but-mounted element (checked via
+  // `container.innerHTML`, which covers attributes and comments too).
+  it('renders no revenue figure at all, even though a reservation carries a nonzero price', async () => {
     mockTodayAt('2026-09-15T12:00:00Z')
-    server.use(dashboardHandler({ collected: '450000.00', occupied_nights: 18, available_nights: 42 }))
+    server.use(
+      cabinsHandler([{ id: 'cab-1111-1111-1111-111111111111', name: 'Casa Azul', is_active: true }]),
+      clientsHandler([{ id: 'cli-1111-1111-1111-111111111111', full_name: 'Marta Ruiz', phone: '1122334455', email: null, national_id: null, is_active: true }]),
+      reservationsHandler([
+        {
+          id: 'res-1111-1111-1111-111111111111',
+          property_id: 'cab-1111-1111-1111-111111111111',
+          client_id: 'cli-1111-1111-1111-111111111111',
+          check_in: '2026-09-16',
+          check_out: '2026-09-20',
+          status: 'confirmed',
+          price_per_night: null,
+          price_total: '450000.00',
+          paid_amount: '450000.00',
+          effective_total: '450000.00',
+          balance: '0.00',
+        },
+      ]),
+    )
 
     const { HomeScreen } = await import('./HomeScreen')
     const { container } = renderHomeScreen(HomeScreen)
 
-    await screen.findByText('18 de 60')
+    await screen.findByText('Casa Azul')
 
     expect(container.innerHTML).not.toMatch(/450000/)
     expect(container.innerHTML).not.toMatch(/\$\s?[\d.,]+/)
   })
 
-  // [TRAP] home-summary spec's "Occupied-Nights Progress Reflects The
-  // Argentina-Time Month" + "The Displayed Month Label Reflects The
+  // [TRAP] home-summary spec's "The Displayed Month Label Reflects The
   // Argentina-Time Month". At `2026-10-01T02:00:00Z` it is still
   // `2026-09-30T23:00` in Argentina -- a naive browser-local/UTC reading
-  // would request and label October. The two fixtures below are
-  // deliberately different (18/60 for September, 5/60 for a wrongly-computed
-  // October) so a naive implementation fails on the NUMBERS, not only on
-  // which query string happened to be sent.
+  // would label October instead.
+  //
+  // The sibling requirement this test used to also cover, "Occupied-Nights
+  // Progress Reflects The Argentina-Time Month", was superseded by the
+  // owner's 2026-09-07 decision to replace the occupancy card with
+  // `UpcomingArrivals` (recorded in `openspec/changes/cabin-booking-
+  // frontend/specs/home-summary/spec.md`). The underlying claim -- that a
+  // `/dashboard/summary` window is computed in Argentina time, not UTC --
+  // did not stop being true, it moved: `CabinDirectory` still calls
+  // `useDashboardSummary()` for its own occupied-nights-this-month figure,
+  // so this trap now lives there instead (`CabinDirectory.test.tsx`).
   it('[TRAP] reflects the Argentina-time month near a UTC rollover, not the UTC month', async () => {
     mockTodayAt('2026-10-01T02:00:00Z')
-    let requestedUrl: URL | undefined
-    server.use(
-      http.get('http://localhost:8000/dashboard/summary', ({ request }) => {
-        const url = new URL(request.url)
-        requestedUrl = url
-        const isSeptemberWindow = url.searchParams.get('from') === '2026-09-01'
-        return HttpResponse.json(
-          isSeptemberWindow
-            ? { collected: '0.00', occupied_nights: 18, available_nights: 42, properties: [] }
-            : { collected: '0.00', occupied_nights: 5, available_nights: 55, properties: [] },
-        )
-      }),
-    )
+    server.use(cabinsHandler([]), clientsHandler([]), reservationsHandler([]))
 
     const { HomeScreen } = await import('./HomeScreen')
     renderHomeScreen(HomeScreen)
 
     await screen.findByText('Septiembre')
-    await screen.findByText('18 de 60')
-    expect(requestedUrl?.searchParams.get('from')).toBe('2026-09-01')
-    expect(requestedUrl?.searchParams.get('to')).toBe('2026-10-01')
   })
 
   // home-summary spec's "'Anotar Una Reserva' Is Always Reachable In One

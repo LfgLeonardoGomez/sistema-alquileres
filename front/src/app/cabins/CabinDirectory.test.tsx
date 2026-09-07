@@ -3,7 +3,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Temporal } from 'temporal-polyfill'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../../test/setup'
 import { CABIN_DIRECTORY_COPY, CABIN_EDIT_SHEET_COPY, CABIN_FORM_COPY, DEACTIVATE_CABIN_SHEET_COPY } from '../../shared/copy/cabins'
 
@@ -59,6 +60,15 @@ function dashboardHandler(properties: readonly { property_id: string; occupied_n
 
 function reservationsHandler(reservations: readonly Record<string, unknown>[] = []) {
   return http.get('http://localhost:8000/reservations/:id', () => HttpResponse.json(reservations[0] ?? null))
+}
+
+// Moved from `HomeScreen.test.tsx` (2026-09-07) alongside the same
+// `mockTodayAt` idiom that file's own trap test established, for the
+// reason recorded on the test using this below.
+function mockTodayAt(instant: string) {
+  return vi
+    .spyOn(Temporal.Now, 'plainDateISO')
+    .mockImplementation((timeZone) => Temporal.Instant.from(instant).toZonedDateTimeISO(timeZone ?? 'UTC').toPlainDate())
 }
 
 function renderDirectory(queryClient: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
@@ -117,6 +127,7 @@ describe('CabinDirectory', () => {
 
   afterEach(() => {
     Object.assign(import.meta.env, originalEnv)
+    vi.restoreAllMocks()
   })
 
   // task 8.1, the spec's own "Cabins Are Never Deleted, Only Deactivated"
@@ -247,5 +258,41 @@ describe('CabinDirectory', () => {
     renderDirectory()
 
     expect(await screen.findByText('9 noches ocupadas este mes')).toBeInTheDocument()
+  })
+
+  // [TRAP] moved from `HomeScreen.test.tsx` (2026-09-07): the home-summary
+  // spec's own "Occupied-Nights Progress Reflects The Argentina-Time
+  // Month" requirement was superseded on Home when the owner replaced its
+  // occupancy card with "Próximas llegadas" (`openspec/changes/
+  // cabin-booking-frontend/specs/home-summary/spec.md` records the
+  // supersession). The underlying claim -- that a `/dashboard/summary`
+  // window is computed in Argentina time, not UTC -- did not stop being
+  // true, it moved: this screen's own occupied-nights-this-month figure
+  // (task 8.9/8.10, `useDashboardSummary.ts`) is the last surviving
+  // caller of that window, so its trap now lives here. At
+  // `2026-10-01T02:00:00Z` it is still `2026-09-30T23:00` in Argentina --
+  // a naive browser-local/UTC reading would request October instead of
+  // September.
+  it('[TRAP] requests the Argentina-time month window near a UTC rollover, not the UTC month', async () => {
+    mockTodayAt('2026-10-01T02:00:00Z')
+    let requestedUrl: URL | undefined
+    server.use(
+      cabinsHandler([{ id: CASA_AZUL, name: 'Casa Azul', is_active: true }]),
+      http.get('http://localhost:8000/dashboard/summary', ({ request }) => {
+        requestedUrl = new URL(request.url)
+        return HttpResponse.json({
+          collected: '0.00',
+          occupied_nights: 9,
+          available_nights: 21,
+          properties: [{ property_id: CASA_AZUL, occupied_nights: 9, available_nights: 21 }],
+        })
+      }),
+    )
+
+    renderDirectory()
+
+    expect(await screen.findByText('9 noches ocupadas este mes')).toBeInTheDocument()
+    expect(requestedUrl?.searchParams.get('from')).toBe('2026-09-01')
+    expect(requestedUrl?.searchParams.get('to')).toBe('2026-10-01')
   })
 })
