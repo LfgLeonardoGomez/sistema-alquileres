@@ -6,6 +6,7 @@ import { monthWindow, type YearMonth } from '../../shared/calendar/monthGrid'
 import { HOME_COPY, MONTH_LABELS } from '../../shared/copy/home'
 import { todayAR } from '../../shared/date/todayAR'
 import { TabBar } from '../shell/TabBar'
+import { SignOutButton } from '../session/SignOutButton'
 
 // home-summary spec: screen 02, "deliberately empty" -- one occupancy card,
 // one always-reachable action, nothing else (tasks 3.17-3.22).
@@ -87,6 +88,12 @@ export function HomeScreen() {
           of forward reference `routes.tsx` already carries for other
           not-yet-built screens (D31's routing table). */}
       <Link to="/reserva/nueva/1">{HOME_COPY.addReservation}</Link>
+      {/* owner-session spec's "The Owner Can Sign Out From Inside The App",
+          Note C(i) (approved 10.1(f)): a low-emphasis affordance owned by
+          `app/session/`, composed here -- after "Anotar una reserva",
+          above the tab bar -- rather than as a fifth tab. `TabBar.tsx`
+          itself is untouched by this or any task in this phase. */}
+      <SignOutButton />
       {/* Handoff screen 02: "Sticky bottom tab bar (4 items: Inicio ·
           Calendario · Huéspedes · Cabañas)" -- every authenticated screen
           composes the same shared `TabBar` (task 3.23). */}

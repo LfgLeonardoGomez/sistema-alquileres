@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
@@ -7,6 +7,8 @@ import { Temporal } from 'temporal-polyfill'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../../test/setup'
 import { HOME_COPY } from '../../shared/copy/home'
+import { SESSION_COPY } from '../../shared/copy/session'
+import { SHELL_COPY } from '../../shared/copy/shell'
 
 // home-summary spec (screen 02, "deliberately empty"): one occupancy card,
 // one always-reachable action, and structurally no revenue figure -- even
@@ -126,5 +128,29 @@ describe('HomeScreen', () => {
     await user.click(button)
 
     expect(router.state.location.pathname).toBe('/reserva/nueva/1')
+  })
+
+  // 10.35 [RED]: owner-session spec's "The Owner Can Sign Out From Inside
+  // The App" -- Inicio renders the sign-out affordance, AND the two
+  // things it must not disturb are still true in the SAME test: Note
+  // C(i)'s one requirement actually at risk ("'Anotar Una Reserva' Is
+  // Always Reachable In One Tap", asserted rather than assumed still
+  // satisfied) and the tab bar still rendering exactly four links (the
+  // fifth-tab alternative Note C(i) rejected, pinned here so a later hand
+  // cannot quietly take it).
+  it('renders the sign-out affordance without displacing "Anotar una reserva" or the four-item tab bar', async () => {
+    mockTodayAt('2026-09-15T12:00:00Z')
+    server.use(dashboardHandler({ collected: '0.00', occupied_nights: 0, available_nights: 60 }))
+
+    const { HomeScreen } = await import('./HomeScreen')
+    renderHomeScreen(HomeScreen)
+
+    expect(await screen.findByRole('button', { name: SESSION_COPY.signOut })).toBeInTheDocument()
+
+    const addReservationLink = screen.getByRole('link', { name: HOME_COPY.addReservation })
+    expect(addReservationLink).toHaveAttribute('href', '/reserva/nueva/1')
+
+    const tabBar = screen.getByRole('navigation', { name: SHELL_COPY.tabBarLabel })
+    expect(within(tabBar).getAllByRole('link')).toHaveLength(4)
   })
 })
