@@ -4,7 +4,7 @@ import { SHELL_COPY } from '../../shared/copy/shell'
 import { formatMoney } from '../../shared/money/formatMoney'
 import { TabBar } from '../shell/TabBar'
 import { useCabins } from '../reservations/useCabins'
-import { useClients, type Client } from '../reservations/useClients'
+import { useClients } from '../reservations/useClients'
 import { useReservations } from '../reservations/useReservations'
 import { AddGuestSheet } from './AddGuestSheet'
 import { GuestSheet } from './GuestSheet'
@@ -30,7 +30,16 @@ export function GuestDirectory() {
   const cabins = useCabins()
   const allGuests = clients.data ?? []
   const [isAddOpen, setIsAddOpen] = useState(false)
-  const [openGuest, setOpenGuest] = useState<Client | null>(null)
+  // Phase 7b (owner-waived TDD, 2026-09-06): an id, not the `Client` object
+  // itself -- so an edit (which invalidates `keys.clients()`) is reflected
+  // in the open sheet on the very next `useClients()` refetch, rather than
+  // the sheet going on showing whatever was captured at click time. Before
+  // this change `GuestSheet` would have kept rendering the pre-edit name
+  // and phone until closed and reopened -- exactly the class of bug this
+  // change's own owner decision (`decisions/guest-edit-untested`) named as
+  // unreachable by a click-test, found here while wiring the edit sheet in.
+  const [openGuestId, setOpenGuestId] = useState<string | null>(null)
+  const openGuest = openGuestId === null ? null : (allGuests.find((guest) => guest.id === openGuestId) ?? null)
   const [search, setSearch] = useState('')
 
   // task 7.5/7.6: a client-side substring filter over the already-fetched
@@ -60,7 +69,7 @@ export function GuestDirectory() {
             const summary = summarizeGuestStays(reservations.data ?? [], guest.id)
             return (
               <li key={guest.id} data-tone={guest.is_active ? undefined : 'muted'}>
-                <button type="button" onClick={() => setOpenGuest(guest)}>
+                <button type="button" onClick={() => setOpenGuestId(guest.id)}>
                   <span>{guest.full_name}</span>
                   <span>{guest.phone}</span>
                   <span>{guestStayCountLabel(summary.stayCount)}</span>
@@ -84,7 +93,7 @@ export function GuestDirectory() {
           guest={openGuest}
           reservations={reservations.data ?? []}
           cabins={cabins.data ?? []}
-          onClose={() => setOpenGuest(null)}
+          onClose={() => setOpenGuestId(null)}
         />
       ) : null}
 

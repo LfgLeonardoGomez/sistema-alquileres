@@ -46,11 +46,14 @@ export function guestOwesLabel(formattedAmount: string): string {
   return `Debe ${formattedAmount}`
 }
 
-// Screen 10 (the guest detail sheet).
+// Screen 10 (the guest detail sheet). `edit` is screen 10's own drawn word
+// ("56px avatar + name 24px/800 + phone + 'Editar'", `docs/design-handoff/README.md`),
+// the same literal label screen 08 already uses for `CABIN_DIRECTORY_COPY.edit`.
 export const GUEST_SHEET_COPY = {
   saldoLabel: 'Saldo',
   staysTitle: 'Sus estadías',
   addReservation: 'Anotarle una reserva',
+  edit: 'Editar',
   deactivate: 'Desactivar',
   close: 'Volver',
 } as const
@@ -70,4 +73,18 @@ export const DEACTIVATE_GUEST_SHEET_COPY = {
   body: 'Sus estadías anteriores quedan guardadas, con su nombre.',
   confirm: 'Sí, desactivar',
   decline: 'No, dejarlo como está',
+} as const
+
+// Phase 7b (owner-waived TDD, 2026-09-06): the "Editar" link's own
+// destination, `CabinEditSheet.tsx`'s own precedent for an undrawn sheet
+// wrapping a reused form. Not drawn as its own surface in the handoff --
+// screen 10 shows only the "Editar" link beside the guest's name and phone
+// -- so this run invents the minimal, same-register wrapper. A distinct
+// title (never the guest's own name) so this sheet's `role="dialog"`
+// cannot collide with `GuestSheet`'s own -- `DeactivateGuestSheet.tsx`'s
+// own established fix for the identical shape (task 7.13).
+export const GUEST_EDIT_SHEET_COPY = {
+  title: 'Editar huésped',
+  save: 'Guardar',
+  close: 'Volver',
 } as const

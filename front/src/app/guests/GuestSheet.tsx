@@ -8,6 +8,7 @@ import type { Cabin } from '../reservations/useCabins'
 import type { Client } from '../reservations/useClients'
 import type { ReservationDetail } from '../reservations/useReservations'
 import { DeactivateGuestSheet } from './DeactivateGuestSheet'
+import { GuestEditSheet } from './GuestEditSheet'
 import { summarizeGuestStays } from './guestSummary'
 
 // tasks 7.9-7.14, handoff screen 10 ("Un huésped, al tocarlo"). Receives
@@ -32,6 +33,7 @@ type Props = {
 
 export function GuestSheet({ guest, reservations, cabins, onClose }: Props) {
   const [isDeactivateOpen, setIsDeactivateOpen] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
   const summary = summarizeGuestStays(reservations, guest.id)
   const visibleStays = summary.stays.slice(0, VISIBLE_STAY_COUNT)
   const overflowStays = summary.stays.slice(VISIBLE_STAY_COUNT)
@@ -44,6 +46,13 @@ export function GuestSheet({ guest, reservations, cabins, onClose }: Props) {
     <div role="dialog" aria-label={guest.full_name}>
       <h2>{guest.full_name}</h2>
       <p>{guest.phone}</p>
+      {/* Phase 7b (owner-waived TDD, 2026-09-06): the "Editar" affordance
+          Phase 7 flagged but deliberately did not build (no task in
+          7.1-7.16 tested it). Opens `GuestEditSheet`, wired to `GuestForm`
+          reused in edit mode. */}
+      <button type="button" onClick={() => setIsEditOpen(true)}>
+        {GUEST_SHEET_COPY.edit}
+      </button>
 
       <section aria-label={GUEST_SHEET_COPY.saldoLabel}>
         <span>{GUEST_SHEET_COPY.saldoLabel}</span>
@@ -88,6 +97,10 @@ export function GuestSheet({ guest, reservations, cabins, onClose }: Props) {
           onClose={() => setIsDeactivateOpen(false)}
           onDeactivated={() => setIsDeactivateOpen(false)}
         />
+      ) : null}
+
+      {isEditOpen ? (
+        <GuestEditSheet guest={guest} onClose={() => setIsEditOpen(false)} onSaved={() => setIsEditOpen(false)} />
       ) : null}
     </div>
   )
