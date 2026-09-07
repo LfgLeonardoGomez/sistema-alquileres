@@ -1,7 +1,12 @@
 import { useEffect } from 'react'
+import { Temporal } from 'temporal-polyfill'
+import type { YearMonth } from '../../shared/calendar/monthGrid'
 import type { DateRange } from '../../shared/calendar/segments'
 import { computeSegments } from '../../shared/calendar/segments'
 import { CALENDAR_COPY } from '../../shared/copy/calendar'
+import { RESERVATION_WIZARD_COPY } from '../../shared/copy/reservations'
+import { formatMonthYear } from '../../shared/date/format'
+import { navButtonClass, segmentedButtonClass, segmentedTrackClass } from '../../shared/ui'
 import { useCabins } from '../reservations/useCabins'
 import { useClients } from '../reservations/useClients'
 import { useReservationsForCabin } from '../reservations/useReservationsForCabin'
@@ -15,16 +20,40 @@ import { WhoStays } from './WhoStays'
 // Screen 03, `reservation-calendar` spec: the segmented control (one cabin
 // shown at a time, D31's URL-state rule), the read-only month grid (D28's
 // headless core + `pastels.ts`'s colouring, tasks 4.13-4.16), and "Quién se
-// queda" below it (tasks 4.19-4.28). Deliberately out of THIS run's scope,
-// flagged rather than silently added: month navigation buttons (the
-// handoff draws `‹ Septiembre 2026 ›`) -- no task in 4.13-4.28 tests
-// navigating between months on this screen, and `useMonthParam`'s own
-// setter is already proven correct in isolation (4.11/4.12); inventing an
-// untested interactive affordance here would be scope creep past the
-// assigned tasks. The month header renders as plain, non-interactive text.
+// queda" below it (tasks 4.19-4.28). The month header (`‹ Septiembre 2026
+// ›`) shares `formatMonthYear()` with the wizard's date step -- added per
+// the owner's live-review correction #4 (2026-09-07): "el calendario no
+// tiene el nombre del mes que estamos viendo" -- never a second
+// date-formatting path.
+//
+// Owner's live-review correction #2 (2026-09-07): "cuando voy a la
+// pestaña calendario solo me muestra el mes actual, no puedo navegar para
+// ver otros meses" -- the header above was plain, non-interactive text
+// with no way to change `?mes=`. Fixed by wiring the SAME prev/next
+// chevron pair `DateStep.tsx`/`EditReservation.tsx` already use around
+// their own month heading (`navButtonClass`, `RESERVATION_WIZARD_COPY`'s
+// glyphs/labels, and each file's own small private `shiftMonth` -- this
+// codebase's established, twice-repeated convention for that one pure
+// function rather than a third shared module) -- not a new control.
+//
+// Deliberately UNCHANGED: `useReservationsForCabin`'s fetch. It already
+// returns the cabin's COMPLETE stay list, never date-windowed (D28's own
+// tripwire, this hook's own header comment) -- `assignPastelSlots` needs
+// every stay to keep colours consistent and collision-free across a month
+// boundary, and `computeSegments`/`WhoStays` already both take `month` and
+// derive their own visible slice from that complete list (`overlapsMonth`
+// below). Paging months here changes what `month` value flows into those
+// two already-`month`-aware consumers -- there is no second, narrower
+// fetch to add without breaking D28's own reason for fetching the whole
+// list in the first place.
+
+function shiftMonth(month: YearMonth, delta: number): YearMonth {
+  const shifted = Temporal.PlainDate.from({ year: month.year, month: month.month, day: 1 }).add({ months: delta })
+  return { year: shifted.year, month: shifted.month }
+}
 
 export function CalendarScreen() {
-  const [month] = useMonthParam()
+  const [month, setMonth] = useMonthParam()
   const [cabinIdParam, setCabinId] = useCabinParam()
   const cabins = useCabins()
   const clients = useClients()
@@ -67,16 +96,43 @@ export function CalendarScreen() {
   const guestsById = new Map((clients.data ?? []).map((client) => [client.id, { full_name: client.full_name }]))
 
   return (
-    <div>
-      <div role="group" aria-label={CALENDAR_COPY.cabinFilterLabel}>
-        {(cabins.data ?? []).map((cabin) => (
-          <button key={cabin.id} type="button" aria-pressed={cabin.id === selectedCabinId} onClick={() => setCabinId(cabin.id)}>
-            {cabin.name}
+    <div className="flex min-h-screen flex-col bg-page">
+      <div className="flex flex-1 flex-col gap-[18px] px-[18px] pt-16 pb-5">
+        <div role="group" aria-label={CALENDAR_COPY.cabinFilterLabel} className={segmentedTrackClass}>
+          {(cabins.data ?? []).map((cabin) => (
+            <button
+              key={cabin.id}
+              type="button"
+              aria-pressed={cabin.id === selectedCabinId}
+              className={segmentedButtonClass(cabin.id === selectedCabinId)}
+              onClick={() => setCabinId(cabin.id)}
+            >
+              {cabin.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-between px-1">
+          <button
+            type="button"
+            aria-label={RESERVATION_WIZARD_COPY.previousMonth}
+            className={navButtonClass}
+            onClick={() => setMonth(shiftMonth(month, -1))}
+          >
+            {RESERVATION_WIZARD_COPY.previousMonthGlyph}
           </button>
-        ))}
+          <h2 className="text-xl font-extrabold text-primary">{formatMonthYear(month)}</h2>
+          <button
+            type="button"
+            aria-label={RESERVATION_WIZARD_COPY.nextMonth}
+            className={navButtonClass}
+            onClick={() => setMonth(shiftMonth(month, 1))}
+          >
+            {RESERVATION_WIZARD_COPY.nextMonthGlyph}
+          </button>
+        </div>
+        <PrivateMonthCalendar month={month} segments={segments} slotByKey={slotByKey} />
+        <WhoStays reservations={reservations.data ?? []} guestsById={guestsById} month={month} slotByKey={slotByKey} />
       </div>
-      <PrivateMonthCalendar month={month} segments={segments} slotByKey={slotByKey} />
-      <WhoStays reservations={reservations.data ?? []} guestsById={guestsById} month={month} slotByKey={slotByKey} />
       <TabBar />
     </div>
   )

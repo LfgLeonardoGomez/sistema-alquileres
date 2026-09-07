@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { configure, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
@@ -10,6 +10,20 @@ import { ROUTING_COPY } from './shared/copy/routing'
 import { SHELL_COPY } from './shared/copy/shell'
 import { HOME_COPY } from './shared/copy/home'
 import { PUBLIC_COPY } from './shared/copy/public'
+
+// The two test files in this suite that mount the REAL `routeConfig` pay a
+// cost none of the others do: every authenticated screen behind it is a
+// `lazy()` chunk (D31). Under the full suite -- 53 files x 3 TZ projects, all
+// parallel -- resolving those dynamic imports routinely takes longer than
+// Testing Library's 1000ms default async budget, so `findBy*` gives up before
+// the chunk has rendered. That is the intermittent 'Casa Azul' failure
+// characterised in Phase 9's addendum and unexplained since Phase 8: a timing
+// budget, not a behaviour.
+//
+// Raising the budget weakens nothing -- every assertion still fails if the
+// behaviour is wrong. It only stops the test failing for a reason that has
+// nothing to do with what it asserts. Scoped to these two files on purpose.
+configure({ asyncUtilTimeout: 5000 })
 
 // design D31 + the Phase 2 addendum (gap 1): "one explicit routes.tsx",
 // both trees visibly separate, public tree lazy(). This is the module that

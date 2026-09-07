@@ -5,6 +5,13 @@
 // drawn.
 
 export const RESERVATION_WIZARD_COPY = {
+  // Step 1 (cabaña) is not drawn in the handoff either -- see this
+  // module's header comment. Added per the owner's live-review correction
+  // #3 (2026-09-07): "veo una pantalla limpia, sin nada más que dos
+  // botones largos, no me gusta" -- a heading was missing above the two
+  // choices. Written as a question, matching `dateStepTitle`/
+  // `priceStepTitle`'s own register.
+  cabinStepTitle: '¿Para qué casa querés reservar?',
   dateStepTitle: '¿Qué noches?',
   priceStepTitle: '¿Cuánto le cobrás?',
   seguir: 'Seguir',
@@ -13,6 +20,10 @@ export const RESERVATION_WIZARD_COPY = {
   perNight: 'Por noche',
   total: 'Total de la estadía',
   amountLabel: 'Monto',
+  // Screen 05's own literal amount-field prefix ("$" 28px muted, before the
+  // typed value) -- `react/jsx-no-literals` (D32) forbids a bare `"$"` in
+  // JSX, so it lives here like every other on-screen string.
+  currencySymbol: '$',
   entradaLabel: 'Entrada',
   salidaLabel: 'Salida',
   nightSingular: 'noche',
@@ -24,6 +35,14 @@ export const RESERVATION_WIZARD_COPY = {
   zeroNightsGuard: 'Elegí al menos una noche.',
   tooManyNightsGuard: 'Elegí un rango de hasta 60 noches.',
   resumenLabel: 'resumen',
+  // Owner's live-review request (2026-09-07): "no me da la opción de anotar
+  // el monto que el cliente me pagó como seña de la reserva" -- an optional
+  // field on this same step, so a stay can be recorded with its deposit in
+  // one pass instead of a second trip through the guest directory. Not
+  // drawn in the handoff (screen 05 predates this request), so this label
+  // is this run's own invention, matching screen 06's own already-approved
+  // word for the same concept ("12/8 · seña — $ 60.000").
+  depositLabel: 'Seña (opcional)',
 } as const
 
 export function wizardStepLabel(step: number): string {
@@ -82,6 +101,14 @@ export const RESERVATION_DETAIL_COPY = {
   methodOther: 'Otro',
   noteLabel: 'Nota',
   guardar: 'Guardar',
+  // Owner's live-review request (2026-09-07), the partial-failure half: the
+  // wizard chains "create the stay" then "record its deposit" as two
+  // separate API calls (the backend has no single endpoint for both) -- if
+  // the first succeeds and the second fails, she lands here instead of
+  // losing the stay. Written to name what already happened (saved) before
+  // what didn't (the deposit), so it never reads as the reservation itself
+  // having failed.
+  depositNotRecorded: 'Guardamos la reserva, pero no pudimos anotar la seña. Anotala acá abajo.',
 } as const
 
 export const CANCEL_SHEET_COPY = {

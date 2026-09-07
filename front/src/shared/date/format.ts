@@ -1,3 +1,4 @@
+import type { YearMonth } from '../calendar/monthGrid'
 import type { PlainDate } from './parsePlainDate'
 
 // design D26: every formatter here reads the branded string's own digits
@@ -50,6 +51,20 @@ export function formatDayMonth(date: PlainDate): string {
  * differently-cased screens). */
 export function monthNameFor(date: PlainDate): string {
   return monthName(splitPlainDate(date).month)
+}
+
+/**
+ * Owner's live-review correction #4 (2026-09-07): "el calendario no tiene
+ * el nombre del mes que estamos viendo" -- the handoff draws `‹ Septiembre
+ * 2026 ›` (screen 04) as the month heading, but neither the wizard's date
+ * step nor the calendar tab ever rendered it. Capitalised, unlike this
+ * module's other month strings (`monthNameFor`, `formatDateRange`), which
+ * sit lowercase inside a sentence -- this one stands alone as a heading,
+ * matching the handoff's own capitalisation.
+ */
+export function formatMonthYear({ year, month }: YearMonth): string {
+  const name = monthName(month)
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${year}`
 }
 
 /**

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { createBrowserRouter, Outlet, type RouteObject } from 'react-router'
+import { createBrowserRouter, Navigate, Outlet, type RouteObject } from 'react-router'
 import { queryClient } from './shared/mutation/queryClient'
 import { RequireSession } from './app/session/RequireSession'
 import { ROUTING_COPY } from './shared/copy/routing'
@@ -100,6 +100,24 @@ const publicRoutes: RouteObject[] = [
 // itself. `/login` sits OUTSIDE it -- guarding the sign-in screen would be
 // its own bug, not a stricter guard.
 const authenticatedRoutes: RouteObject[] = [
+  // The app's own front door. With no dedicated `/` screen, an unguarded
+  // catch-all would render `NotFoundScreen` for the bare origin -- this
+  // redirects straight to `/inicio` instead, INSIDE `RequireSession` so the
+  // existing guard does the rest, no second guard built: no session ->
+  // `/login`, recording `/` itself as `state.from` (`RequireSession` reads
+  // the REQUESTED path, before this nested redirect ever gets to run) --
+  // `returnPath.ts`'s `isSafeInAppPath` already accepts a bare `/` as a
+  // safe in-app path, so completing sign-in lands back on `/`, which by
+  // then IS authenticated and falls through this same rule to `/inicio`,
+  // the same net destination as every other route's own return trip
+  // (10.18/10.19). A held session skips `/login` entirely and reaches
+  // `/inicio` directly. `replace` so this redirect never becomes its own
+  // back-button stop. Verified against the real running app (browser,
+  // both cases) -- see this task's own apply-progress note.
+  {
+    path: '/',
+    element: <Navigate to="/inicio" replace />,
+  },
   {
     path: '/inicio',
     lazy: async () => {

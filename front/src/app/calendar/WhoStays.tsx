@@ -4,9 +4,10 @@ import { CALENDAR_COPY } from '../../shared/copy/calendar'
 import { nightsBetween } from '../../shared/date/nightsBetween'
 import { formatDateRange } from '../../shared/date/format'
 import { formatMoney } from '../../shared/money/formatMoney'
+import { rowClass } from '../../shared/ui'
 import { displayBalance } from '../reservations/displayBalance'
 import type { ReservationForCalendar } from '../reservations/useReservationsForCabin'
-import type { PastelSlot } from './pastels'
+import { PASTEL_DOT_CLASS, type PastelSlot } from './pastels'
 
 // `reservation-calendar` spec: "'Quién Se Queda' Lists Every Non-Cancelled
 // Stay Overlapping The Month, Ordered By Check-In" -- the API orders by
@@ -41,17 +42,22 @@ export function WhoStays({ reservations, guestsById, month, slotByKey }: Props) 
 
   if (staying.length === 0) {
     return (
-      <div>
-        <p>{CALENDAR_COPY.emptyMonth}</p>
-        <Link to="/reserva/nueva/1">{CALENDAR_COPY.addReservation}</Link>
+      <div className="flex flex-col gap-3.5">
+        <p className="text-lg text-muted">{CALENDAR_COPY.emptyMonth}</p>
+        <Link
+          to="/reserva/nueva/1"
+          className="flex h-16 items-center justify-center rounded-btn bg-accent text-lg font-extrabold text-white"
+        >
+          {CALENDAR_COPY.addReservation}
+        </Link>
       </div>
     )
   }
 
   return (
-    <div>
-      <h2>{CALENDAR_COPY.whoStaysTitle}</h2>
-      <ul>
+    <div className="flex flex-col gap-2.5">
+      <h2 className="text-[17px] font-extrabold text-muted">{CALENDAR_COPY.whoStaysTitle}</h2>
+      <ul className="flex flex-col gap-2.5">
         {staying.map((reservation) => {
           const guest = guestsById.get(reservation.clientId)
           const nights = nightsBetween(reservation.checkIn, reservation.checkOut)
@@ -62,13 +68,21 @@ export function WhoStays({ reservations, guestsById, month, slotByKey }: Props) 
           // (`reservation-ledger`, out of this screen's scope) and renders
           // here as "Pagado" rather than inventing an untested third state.
           const balanceCentavos = displayBalance({ status: reservation.status, balance: reservation.balanceCentavos })
+          const slot = slotByKey.get(reservation.id) ?? 0
           return (
             <li key={reservation.id} data-testid={`stay-${reservation.id}`} data-pastel-slot={slotByKey.get(reservation.id)}>
-              <span>{guest?.full_name ?? ''}</span>
-              <span>
-                {formatDateRange(reservation.checkIn, reservation.checkOut)} · {nights} {nightsLabel}
-              </span>
-              <span>{balanceCentavos > 0 ? `${CALENDAR_COPY.debePrefix} ${formatMoney(balanceCentavos)}` : CALENDAR_COPY.paid}</span>
+              <Link to={`/reserva/${reservation.id}`} className={rowClass}>
+                <span className={`h-3 w-3 shrink-0 rounded-pill ${PASTEL_DOT_CLASS[slot as PastelSlot]}`} />
+                <div className="flex flex-1 flex-col gap-0.5">
+                  <span className="text-lg font-bold text-primary">{guest?.full_name ?? ''}</span>
+                  <span className="text-base text-muted-2">
+                    {formatDateRange(reservation.checkIn, reservation.checkOut)} · {nights} {nightsLabel}
+                  </span>
+                </div>
+                <span className={`text-base font-extrabold ${balanceCentavos > 0 ? 'text-warm' : 'text-green-ink'}`}>
+                  {balanceCentavos > 0 ? `${CALENDAR_COPY.debePrefix} ${formatMoney(balanceCentavos)}` : CALENDAR_COPY.paid}
+                </span>
+              </Link>
             </li>
           )
         })}

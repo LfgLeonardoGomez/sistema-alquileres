@@ -53,6 +53,17 @@ export function Wizard() {
           draft.setCabin(cabin)
           goToStep(2)
         }}
+        // Owner's live-review correction #1 (2026-09-07): step 1 was a dead
+        // end -- no back chevron, no tab bar, no way out. `draft.reset()`
+        // here mirrors the store's ONLY other call site (a successful
+        // save, below): both are "leaving the wizard" events, never mere
+        // step navigation. Without this, an abandoned attempt could leave
+        // a stale cabin/dates/guest on the draft that silently resurfaces
+        // the next time she opens a fresh reservation.
+        onCancel={() => {
+          draft.reset()
+          navigate('/inicio')
+        }}
       />
     )
   }
@@ -102,15 +113,23 @@ export function Wizard() {
         initialAmount={draft.amount}
         onBack={() => goToStep(3)}
         onPriceChange={(priceMode, amount) => draft.setPrice(priceMode, amount)}
-        onSaved={() => {
+        onSaved={(options) => {
           // `reservation-recording` spec "Saving Clears The Draft And
           // Leaves The Wizard" (5.26/5.27): the ONLY place `reset()` is
           // called on a successful path. `setJustSaved(true)` batches with
           // `draft.reset()`'s own re-render (both fire synchronously here,
           // in the same tick), so the very next render this component
           // makes already knows a save just happened.
+          //
+          // `options` is the owner's live-review deposit request's own
+          // escape hatch (2026-09-07): the reservation is ALWAYS saved by
+          // the time this fires, so the draft always clears here -- but a
+          // failed deposit lands her on the new stay's own detail screen
+          // instead of `/inicio`, carrying a message through router state
+          // rather than through this in-memory draft (which is about to be
+          // reset regardless).
           setJustSaved(true)
-          navigate('/inicio')
+          navigate(options?.path ?? '/inicio', options?.depositFailed ? { state: { depositFailed: true } } : undefined)
           draft.reset()
         }}
       />
