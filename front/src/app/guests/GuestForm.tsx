@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { GUESTS_COPY } from '../../shared/copy/guests'
+import { Button, fieldLabelClass, inputClass } from '../../shared/ui'
 
 // tasks 7.4/7.15/7.16 -- the phone/name pair and its required-field guard,
 // extracted so a SECOND entry point (the guest directory's "Agregar un
@@ -37,18 +38,18 @@ export function GuestForm({ initialFullName = '', initialPhone = '', submitLabel
   }
 
   return (
-    <div>
-      <label>
-        {GUESTS_COPY.phoneLabel}
-        <input value={phone} onChange={(event) => setPhone(event.target.value)} />
+    <div className="flex flex-col gap-4">
+      <label className="flex flex-col gap-2">
+        <span className={fieldLabelClass}>{GUESTS_COPY.phoneLabel}</span>
+        <input className={inputClass} value={phone} onChange={(event) => setPhone(event.target.value)} />
       </label>
-      <label>
-        {GUESTS_COPY.nameLabel}
-        <input value={fullName} onChange={(event) => setFullName(event.target.value)} />
+      <label className="flex flex-col gap-2">
+        <span className={fieldLabelClass}>{GUESTS_COPY.nameLabel}</span>
+        <input className={inputClass} value={fullName} onChange={(event) => setFullName(event.target.value)} />
       </label>
-      <button type="button" disabled={!canSubmit} onClick={handleSubmit}>
+      <Button variant="primary" disabled={!canSubmit} onClick={handleSubmit}>
         {submitLabel}
-      </button>
+      </Button>
     </div>
   )
 }

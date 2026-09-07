@@ -11,8 +11,8 @@ import { TabBar } from './TabBar'
 
 export function CalendarPlaceholder() {
   return (
-    <div>
-      <p>{SHELL_COPY.calendarEmpty}</p>
+    <div className="flex min-h-screen flex-col bg-page">
+      <p className="flex-1 px-5 pt-16 text-lg text-muted">{SHELL_COPY.calendarEmpty}</p>
       <TabBar />
     </div>
   )
@@ -20,8 +20,8 @@ export function CalendarPlaceholder() {
 
 export function GuestsPlaceholder() {
   return (
-    <div>
-      <p>{SHELL_COPY.guestsEmpty}</p>
+    <div className="flex min-h-screen flex-col bg-page">
+      <p className="flex-1 px-5 pt-16 text-lg text-muted">{SHELL_COPY.guestsEmpty}</p>
       <TabBar />
     </div>
   )
@@ -29,8 +29,8 @@ export function GuestsPlaceholder() {
 
 export function CabinsPlaceholder() {
   return (
-    <div>
-      <p>{SHELL_COPY.cabinsEmpty}</p>
+    <div className="flex min-h-screen flex-col bg-page">
+      <p className="flex-1 px-5 pt-16 text-lg text-muted">{SHELL_COPY.cabinsEmpty}</p>
       <TabBar />
     </div>
   )

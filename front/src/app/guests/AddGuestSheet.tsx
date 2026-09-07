@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { GUEST_DIRECTORY_COPY, GUESTS_COPY, guestPhoneBelongsToAnotherMessage } from '../../shared/copy/guests'
 import { resolveErrorCopy } from '../../shared/errors/resolve'
+import { Button, Sheet } from '../../shared/ui'
 import { useFindOrCreateGuest } from './useFindOrCreateGuest'
 import { GuestForm } from './GuestForm'
 
@@ -35,22 +36,32 @@ export function AddGuestSheet({ onClose }: Props) {
   }
 
   return (
-    <div role="dialog" aria-label={GUEST_DIRECTORY_COPY.addGuest}>
-      <h2>{GUEST_DIRECTORY_COPY.addGuest}</h2>
-      <GuestForm submitLabel={GUESTS_COPY.search} onSubmit={(values) => void handleSubmit(values)} />
+    <Sheet>
+      <div role="dialog" aria-label={GUEST_DIRECTORY_COPY.addGuest} className="flex flex-col gap-4">
+        <h2 className="text-2xl font-extrabold text-primary">{GUEST_DIRECTORY_COPY.addGuest}</h2>
+        <GuestForm submitLabel={GUESTS_COPY.search} onSubmit={(values) => void handleSubmit(values)} />
 
-      {conflictMessage !== null ? <p role="alert">{conflictMessage}</p> : null}
-      {findOrCreateGuest.isError ? <p role="alert">{resolveErrorCopy(findOrCreateGuest.error)}</p> : null}
+        {conflictMessage !== null ? (
+          <p role="alert" className="text-base font-bold text-warm">
+            {conflictMessage}
+          </p>
+        ) : null}
+        {findOrCreateGuest.isError ? (
+          <p role="alert" className="text-base font-bold text-warm">
+            {resolveErrorCopy(findOrCreateGuest.error)}
+          </p>
+        ) : null}
 
-      {resolved !== null ? (
-        <section aria-label={GUEST_DIRECTORY_COPY.addGuest}>
-          <p>{resolved.fullName}</p>
-          <p>{resolved.phone}</p>
-          <button type="button" onClick={onClose}>
-            {GUESTS_COPY.seguir}
-          </button>
-        </section>
-      ) : null}
-    </div>
+        {resolved !== null ? (
+          <section aria-label={GUEST_DIRECTORY_COPY.addGuest} className="flex flex-col gap-2 rounded-[20px] border border-card-border bg-surface p-5">
+            <p className="text-lg font-bold text-primary">{resolved.fullName}</p>
+            <p className="text-base text-muted-2">{resolved.phone}</p>
+            <Button variant="primary" onClick={onClose}>
+              {GUESTS_COPY.seguir}
+            </Button>
+          </section>
+        ) : null}
+      </div>
+    </Sheet>
   )
 }

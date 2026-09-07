@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { GUESTS_COPY, guestPhoneBelongsToAnotherMessage } from '../../../shared/copy/guests'
 import { RESERVATION_WIZARD_COPY, wizardStepLabel } from '../../../shared/copy/reservations'
 import { resolveErrorCopy } from '../../../shared/errors/resolve'
+import { Button, fieldLabelClass, inputClass, navButtonClass } from '../../../shared/ui'
 import { useFindOrCreateGuest } from '../../guests/useFindOrCreateGuest'
 import type { WizardGuest } from './store'
 
@@ -54,16 +55,21 @@ export function GuestStep({ initialGuest, onContinue, onBack }: Props) {
   const canSearch = phone.trim() !== '' && fullName.trim() !== ''
 
   return (
-    <div>
-      <button type="button" onClick={onBack}>
-        {RESERVATION_WIZARD_COPY.volver}
-      </button>
-      <p>{wizardStepLabel(3)}</p>
-      <h1>{GUESTS_COPY.guestStepTitle}</h1>
+    <div className="flex min-h-screen flex-col gap-[18px] bg-page px-[18px] pt-16 pb-5">
+      <div className="flex items-center gap-3.5">
+        <button type="button" aria-label={RESERVATION_WIZARD_COPY.volver} className={navButtonClass} onClick={onBack}>
+          {RESERVATION_WIZARD_COPY.previousMonthGlyph}
+        </button>
+        <div className="flex flex-col">
+          <p className="text-[15px] font-extrabold text-faint-2">{wizardStepLabel(3)}</p>
+          <h1 className="text-[22px] font-extrabold text-primary">{GUESTS_COPY.guestStepTitle}</h1>
+        </div>
+      </div>
 
-      <label>
-        {GUESTS_COPY.phoneLabel}
+      <label className="flex flex-col gap-2">
+        <span className={fieldLabelClass}>{GUESTS_COPY.phoneLabel}</span>
         <input
+          className={inputClass}
           value={phone}
           onChange={(event) => {
             setPhone(event.target.value)
@@ -72,9 +78,10 @@ export function GuestStep({ initialGuest, onContinue, onBack }: Props) {
           }}
         />
       </label>
-      <label>
-        {GUESTS_COPY.nameLabel}
+      <label className="flex flex-col gap-2">
+        <span className={fieldLabelClass}>{GUESTS_COPY.nameLabel}</span>
         <input
+          className={inputClass}
           value={fullName}
           onChange={(event) => {
             setFullName(event.target.value)
@@ -83,20 +90,31 @@ export function GuestStep({ initialGuest, onContinue, onBack }: Props) {
           }}
         />
       </label>
-      <button type="button" disabled={!canSearch} onClick={() => void handleSearch()}>
+      <Button variant="secondary" disabled={!canSearch} onClick={() => void handleSearch()}>
         {GUESTS_COPY.search}
-      </button>
+      </Button>
 
-      {conflictMessage !== null ? <p role="alert">{conflictMessage}</p> : null}
-      {findOrCreateGuest.isError ? <p role="alert">{resolveErrorCopy(findOrCreateGuest.error)}</p> : null}
+      {conflictMessage !== null ? (
+        <p role="alert" className="text-base font-bold text-warm">
+          {conflictMessage}
+        </p>
+      ) : null}
+      {findOrCreateGuest.isError ? (
+        <p role="alert" className="text-base font-bold text-warm">
+          {resolveErrorCopy(findOrCreateGuest.error)}
+        </p>
+      ) : null}
 
       {resolved !== null ? (
-        <section aria-label={GUESTS_COPY.guestStepTitle}>
-          <p>{resolved.fullName}</p>
-          <p>{resolved.phone}</p>
-          <button type="button" onClick={() => onContinue(resolved)}>
+        <section
+          aria-label={GUESTS_COPY.guestStepTitle}
+          className="flex flex-col gap-2 rounded-[20px] border border-card-border bg-surface p-5"
+        >
+          <p className="text-lg font-bold text-primary">{resolved.fullName}</p>
+          <p className="text-base text-muted-2">{resolved.phone}</p>
+          <Button variant="primary" onClick={() => onContinue(resolved)}>
             {GUESTS_COPY.seguir}
-          </button>
+          </Button>
         </section>
       ) : null}
     </div>

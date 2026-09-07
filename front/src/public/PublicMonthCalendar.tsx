@@ -1,6 +1,7 @@
 import { getMonthGrid, type YearMonth } from '../shared/calendar/monthGrid'
 import { computeSegments, type DateRange } from '../shared/calendar/segments'
 import { WEEKDAY_INITIALS } from '../shared/copy/public'
+import { dayBarClass, dayNumberClass, weekdayHeaderClass, type DayBarKind } from '../shared/ui'
 
 // design D28: "the public surface is *not* a third colour scheme." This
 // component receives ranges to segment (per-cabin ranges, or already
@@ -22,22 +23,40 @@ function dayOfMonth(date: string): number {
   return Number(date.slice(8, 10))
 }
 
+// A day can carry two adjacency half-segments (an outgoing stay's checkout
+// and an incoming stay's check-in landing on the same date) -- the public
+// page renders ONE flat neutral colour regardless (D28: "not a third colour
+// scheme"), so a day with any segment reads as fully occupied, never as two
+// visually distinct halves the way the private calendar does.
+function collapsedKind(daySegments: readonly { readonly kind: DayBarKind }[]): DayBarKind | null {
+  if (daySegments.length === 0) return null
+  if (daySegments.length > 1) return 'middle'
+  return daySegments[0]!.kind
+}
+
 export function PublicMonthCalendar({ month, occupiedRanges }: Props) {
   const grid = getMonthGrid(month)
   const segments = computeSegments(occupiedRanges, month)
 
-  const occupiedDates = new Set<string>()
+  const segmentsByDate = new Map<string, DayBarKind[]>()
   for (const segment of segments) {
-    occupiedDates.add(segment.date)
+    const existing = segmentsByDate.get(segment.date)
+    if (existing === undefined) {
+      segmentsByDate.set(segment.date, [segment.kind])
+    } else {
+      existing.push(segment.kind)
+    }
   }
 
   return (
-    <table>
+    <table className="w-full border-separate border-spacing-0 rounded-card border border-card-border bg-surface px-2.5 pt-3.5 pb-[18px]">
       <thead>
         <tr>
           {WEEKDAY_INITIALS.map((initial, index) => (
             // A fixed, never-reordered 7-item header -- an index key is safe here.
-            <th key={index}>{initial}</th>
+            <th key={index} className={`${weekdayHeaderClass} pb-1.5 font-extrabold`}>
+              {initial}
+            </th>
           ))}
         </tr>
       </thead>
@@ -50,21 +69,18 @@ export function PublicMonthCalendar({ month, occupiedRanges }: Props) {
                 // Blank cells carry no identity -- an index key is safe here.
                 return <td key={dayIndex} />
               }
-              const occupied = occupiedDates.has(cell.date)
-              // One flat class regardless of which range (or which merged
-              // "Las dos" interval) the day belongs to -- `range.key` never
-              // reaches this className, which is the structural half of
-              // "no per-stay colour" (the other half is the missing
-              // stay-identity prop on this component's own `Props`).
-              const className = occupied ? 'public-calendar__day public-calendar__day--occupied' : 'public-calendar__day'
+              const kinds = segmentsByDate.get(cell.date) ?? []
+              const kind = collapsedKind(kinds.map((k) => ({ kind: k })))
+              const occupied = kind !== null
               return (
                 <td
                   key={cell.date}
                   data-testid={`day-${cell.date}`}
                   data-occupied={occupied ? 'true' : undefined}
-                  className={className}
+                  className="relative h-[50px] text-center"
                 >
-                  {dayOfMonth(cell.date)}
+                  {kind !== null ? <div className={`${dayBarClass(kind)} bg-occupied`} /> : null}
+                  <span className={dayNumberClass(occupied)}>{dayOfMonth(cell.date)}</span>
                 </td>
               )
             })}

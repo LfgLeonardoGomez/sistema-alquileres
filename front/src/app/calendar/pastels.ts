@@ -21,6 +21,22 @@ export type PastelSlot = 0 | 1 | 2
 
 const SLOT_COUNT = 3
 
+// README's own three pastels: "#DCDEF9, #DDEFE6, #FBE4D6" for the occupied
+// bar, plus the matching dot colour ("cabin A dot" / cabin B's green /
+// warm) shown beside each stay in "Quién se queda". Colour lives here, in
+// `app/calendar/` (D28), never in `shared/calendar/` or `shared/ui/`.
+export const PASTEL_BAR_CLASS: Readonly<Record<PastelSlot, string>> = {
+  0: 'bg-accent-soft',
+  1: 'bg-green-bar',
+  2: 'bg-warm-bar',
+}
+
+export const PASTEL_DOT_CLASS: Readonly<Record<PastelSlot, string>> = {
+  0: 'bg-accent-soft-2',
+  1: 'bg-green-dot',
+  2: 'bg-warm-dot',
+}
+
 /**
  * Assigns each stay one of three rotating colour slots, ordered by
  * `check_in`, guaranteeing two stays sharing an adjacency day (one's

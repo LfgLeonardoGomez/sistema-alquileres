@@ -8,8 +8,26 @@ import { MONTH_NAMES, PUBLIC_COPY } from '../shared/copy/public'
 import { todayAR } from '../shared/date/todayAR'
 import type { ApiError } from '../shared/errors/ApiError'
 import { resolveErrorCopy } from '../shared/errors/resolve'
+import { navButtonClass, segmentedButtonClass, segmentedTrackClass } from '../shared/ui'
 import { getPublicAvailability, getPublicContact, type PublicAvailability } from './api'
 import { PublicMonthCalendar } from './PublicMonthCalendar'
+
+// Screen 11/12's own striped placeholder, README: "Currently striped
+// placeholders labelled 'foto casa azul', 'foto dos aguas' -- replace with
+// real photos." No photo asset ships with this change (Assets: "None
+// shipped"); this decorative tile is the exact visual stand-in the handoff
+// draws, `aria-hidden` because it carries no information a screen reader
+// could act on.
+function PhotoPlaceholder({ label }: { readonly label: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-[110px] items-end rounded-2xl bg-[repeating-linear-gradient(135deg,#F2F2F8_0px,#F2F2F8_8px,#EAEAF3_8px,#EAEAF3_16px)] p-2.5 font-mono text-xs text-[#8A8CA0]"
+    >
+      {label}
+    </div>
+  )
+}
 
 // design D25/D28/D31: the public availability page. No auth, no wizard, no
 // money -- the independently shippable slice. This module (and everything
@@ -113,36 +131,85 @@ export function AvailabilityPage() {
   const monthLabel = `${MONTH_NAMES[monthNumber - 1]} ${year}`
 
   return (
-    <div>
-      <div role="group" aria-label={PUBLIC_COPY.filterLabel}>
-        <button type="button" onClick={() => setSelectedCabin(BOTH_CABINS)}>
+    <div className="mx-auto flex min-h-screen max-w-[560px] flex-col gap-[18px] bg-white px-5 pt-16 pb-[120px]">
+      <div className="flex flex-col gap-1">
+        <div className="text-[28px] font-extrabold tracking-tight text-primary">{PUBLIC_COPY.title}</div>
+        <div className="text-lg text-muted">{PUBLIC_COPY.subtitle}</div>
+      </div>
+
+      <div role="group" aria-label={PUBLIC_COPY.filterLabel} className={`${segmentedTrackClass} bg-track-2`}>
+        <button
+          type="button"
+          className={segmentedButtonClass(selectedCabin === BOTH_CABINS, 'h-[46px]')}
+          onClick={() => setSelectedCabin(BOTH_CABINS)}
+        >
           {PUBLIC_COPY.bothCabins}
         </button>
         {availability.map((cabin) => (
-          <button key={cabin.propertyId} type="button" onClick={() => setSelectedCabin(cabin.name)}>
+          <button
+            key={cabin.propertyId}
+            type="button"
+            className={segmentedButtonClass(selectedCabin === cabin.name, 'h-[46px]')}
+            onClick={() => setSelectedCabin(cabin.name)}
+          >
             {cabin.name}
           </button>
         ))}
       </div>
 
-      <div>
-        <button type="button" aria-label={PUBLIC_COPY.previousMonth} onClick={() => setMonth((current) => shiftMonth(current, -1))}>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          aria-label={PUBLIC_COPY.previousMonth}
+          className={`${navButtonClass} bg-surface-muted`}
+          onClick={() => setMonth((current) => shiftMonth(current, -1))}
+        >
           {PUBLIC_COPY.previousMonthGlyph}
         </button>
-        <span>{monthLabel}</span>
-        <button type="button" aria-label={PUBLIC_COPY.nextMonth} onClick={() => setMonth((current) => shiftMonth(current, 1))}>
+        <span className="text-xl font-extrabold text-primary">{monthLabel}</span>
+        <button
+          type="button"
+          aria-label={PUBLIC_COPY.nextMonth}
+          className={`${navButtonClass} bg-surface-muted`}
+          onClick={() => setMonth((current) => shiftMonth(current, 1))}
+        >
           {PUBLIC_COPY.nextMonthGlyph}
         </button>
       </div>
 
-      <div>
-        <span>{PUBLIC_COPY.legendFree}</span>
-        <span>{PUBLIC_COPY.legendOccupied}</span>
+      {error !== null ? (
+        <p className="text-base font-bold text-warm">{resolveErrorCopy(error)}</p>
+      ) : (
+        <PublicMonthCalendar month={month} occupiedRanges={displayedRanges} />
+      )}
+
+      <div className="flex items-center gap-5 text-base text-muted">
+        <span className="flex items-center gap-2">
+          <span className="h-[18px] w-[18px] rounded-md border border-input-border bg-surface" />
+          {PUBLIC_COPY.legendFree}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-[18px] w-[18px] rounded-md bg-occupied" />
+          {PUBLIC_COPY.legendOccupied}
+        </span>
       </div>
 
-      {error !== null ? <p>{resolveErrorCopy(error)}</p> : <PublicMonthCalendar month={month} occupiedRanges={displayedRanges} />}
+      <div className="flex flex-col gap-2.5">
+        <div className="text-lg font-extrabold text-primary">{PUBLIC_COPY.housesTitle}</div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <PhotoPlaceholder label={PUBLIC_COPY.photoCasaAzul} />
+          <PhotoPlaceholder label={PUBLIC_COPY.photoDosAguas} />
+        </div>
+      </div>
 
-      {whatsapp !== null ? <a href={`https://wa.me/${whatsapp}`}>{PUBLIC_COPY.whatsappButton}</a> : null}
+      {whatsapp !== null ? (
+        <a
+          href={`https://wa.me/${whatsapp}`}
+          className="fixed inset-x-5 bottom-5 mx-auto flex h-16 max-w-[520px] items-center justify-center rounded-btn bg-green text-lg font-extrabold text-white"
+        >
+          {PUBLIC_COPY.whatsappButton}
+        </a>
+      ) : null}
     </div>
   )
 }

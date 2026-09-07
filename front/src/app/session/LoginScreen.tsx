@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-route
 import { apiRequest } from '../api/client'
 import { SESSION_COPY } from '../../shared/copy/session'
 import { env } from '../../env'
+import { Button, fieldLabelClass, inputClass } from '../../shared/ui'
 import { useSessionStore } from './store'
 import { resolveReturnPath } from './returnPath'
 
@@ -97,24 +98,37 @@ export function LoginScreen() {
   }
 
   return (
-    <>
-      {showExpiredMessage ? <p>{SESSION_COPY.expiredMessage}</p> : null}
-      <form onSubmit={(event) => void handleSubmit(event)}>
-        <label>
-          {SESSION_COPY.emailLabel}
-          <input type="email" name="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-        </label>
-        <label>
-          {SESSION_COPY.passwordLabel}
+    <div className="flex min-h-screen flex-col bg-page px-[26px] pt-[150px] pb-[60px]">
+      <div className="mb-12 flex flex-col gap-2">
+        <div className="text-[34px] font-extrabold tracking-tight text-primary">{SESSION_COPY.title}</div>
+        <div className="text-lg text-muted">{SESSION_COPY.subtitle}</div>
+      </div>
+      {showExpiredMessage ? <p className="mb-4 text-base text-warm">{SESSION_COPY.expiredMessage}</p> : null}
+      <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
+        <label className="flex flex-col gap-2">
+          <span className={fieldLabelClass}>{SESSION_COPY.emailLabel}</span>
           <input
+            className={inputClass}
+            type="email"
+            name="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-2">
+          <span className={fieldLabelClass}>{SESSION_COPY.passwordLabel}</span>
+          <input
+            className={inputClass}
             type="password"
             name="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
         </label>
-        <button type="submit">{SESSION_COPY.submit}</button>
+        <Button type="submit" variant="primary" className="mt-3">
+          {SESSION_COPY.submit}
+        </Button>
       </form>
-    </>
+    </div>
   )
 }

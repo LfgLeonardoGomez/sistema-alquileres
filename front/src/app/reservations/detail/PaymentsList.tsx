@@ -62,12 +62,14 @@ export function PaymentsList({ payments }: Props) {
     .sort((a, b) => (a.paidOn < b.paidOn ? -1 : a.paidOn > b.paidOn ? 1 : 0))
 
   return (
-    <section aria-label={RESERVATION_DETAIL_COPY.paymentsTitle}>
-      <h2>{RESERVATION_DETAIL_COPY.paymentsTitle}</h2>
-      {ordered.length === 0 ? <p>{RESERVATION_DETAIL_COPY.noPayments}</p> : null}
-      <ul>
+    <section aria-label={RESERVATION_DETAIL_COPY.paymentsTitle} className="mb-[22px] flex flex-col gap-2.5">
+      <h2 className="pl-1 text-[17px] font-extrabold text-muted">{RESERVATION_DETAIL_COPY.paymentsTitle}</h2>
+      {ordered.length === 0 ? <p className="text-base text-muted-2">{RESERVATION_DETAIL_COPY.noPayments}</p> : null}
+      <ul className="flex flex-col gap-2.5">
         {ordered.map((payment) => (
-          <li key={payment.id}>{paymentRowLabel(payment)}</li>
+          <li key={payment.id} className="flex justify-between rounded-row border border-card-border bg-surface px-[18px] py-4 text-lg">
+            {paymentRowLabel(payment)}
+          </li>
         ))}
       </ul>
     </section>

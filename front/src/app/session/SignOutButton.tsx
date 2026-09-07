@@ -11,7 +11,7 @@ import { useSignOut } from './useSignOut'
 export function SignOutButton() {
   const signOut = useSignOut()
   return (
-    <button type="button" onClick={signOut}>
+    <button type="button" className="text-center text-[17px] font-bold text-faint" onClick={signOut}>
       {SESSION_COPY.signOut}
     </button>
   )

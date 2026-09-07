@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { RESERVATION_DETAIL_COPY } from '../../../shared/copy/reservations'
 import { resolveErrorCopy } from '../../../shared/errors/resolve'
+import { Button, fieldLabelClass, inputClass, segmentedButtonClass, segmentedTrackClass, Sheet } from '../../../shared/ui'
 import { useCreatePayment } from '../useCreatePayment'
 import type { PaymentMethod } from '../usePayments'
 
@@ -60,40 +61,52 @@ export function PaymentSheet({ reservationId, mode, onClose }: Props) {
   }
 
   return (
-    <div role="dialog" aria-label={title}>
-      <h2>{title}</h2>
+    <Sheet>
+      <div role="dialog" aria-label={title} className="flex flex-col gap-4">
+        <h2 className="text-2xl font-extrabold text-primary">{title}</h2>
 
-      <label>
-        {RESERVATION_DETAIL_COPY.amountLabel}
-        <input type="number" value={amountPesos} onChange={(event) => setAmountPesos(event.target.value)} />
-      </label>
+        <label className="flex flex-col gap-2">
+          <span className={fieldLabelClass}>{RESERVATION_DETAIL_COPY.amountLabel}</span>
+          <input
+            className={inputClass}
+            type="number"
+            value={amountPesos}
+            onChange={(event) => setAmountPesos(event.target.value)}
+          />
+        </label>
 
-      <div role="group" aria-label={RESERVATION_DETAIL_COPY.methodLabel}>
-        {METHODS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={method === option.value}
-            onClick={() => setMethod(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
+        <div role="group" aria-label={RESERVATION_DETAIL_COPY.methodLabel} className={segmentedTrackClass}>
+          {METHODS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={method === option.value}
+              className={segmentedButtonClass(method === option.value)}
+              onClick={() => setMethod(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="flex flex-col gap-2">
+          <span className={fieldLabelClass}>{RESERVATION_DETAIL_COPY.noteLabel}</span>
+          <input className={inputClass} value={note} onChange={(event) => setNote(event.target.value)} />
+        </label>
+
+        {createPayment.isError ? (
+          <p role="alert" className="text-base font-bold text-warm">
+            {resolveErrorCopy(createPayment.error)}
+          </p>
+        ) : null}
+
+        <Button variant="primary" onClick={() => void handleSave()}>
+          {RESERVATION_DETAIL_COPY.guardar}
+        </Button>
+        <Button variant="secondary" onClick={onClose}>
+          {RESERVATION_DETAIL_COPY.volver}
+        </Button>
       </div>
-
-      <label>
-        {RESERVATION_DETAIL_COPY.noteLabel}
-        <input value={note} onChange={(event) => setNote(event.target.value)} />
-      </label>
-
-      {createPayment.isError ? <p role="alert">{resolveErrorCopy(createPayment.error)}</p> : null}
-
-      <button type="button" onClick={() => void handleSave()}>
-        {RESERVATION_DETAIL_COPY.guardar}
-      </button>
-      <button type="button" onClick={onClose}>
-        {RESERVATION_DETAIL_COPY.volver}
-      </button>
-    </div>
+    </Sheet>
   )
 }

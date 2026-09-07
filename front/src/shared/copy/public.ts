@@ -31,6 +31,10 @@ export const MONTH_NAMES = [
 export const WEEKDAY_INITIALS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'] as const
 
 export const PUBLIC_COPY = {
+  // Screen 11's own literal heading, lifted verbatim: "Alquileres AyA" +
+  // "Mar del Tuyú · noches libres".
+  title: 'Alquileres AyA',
+  subtitle: 'Mar del Tuyú · noches libres',
   filterLabel: 'Elegí una cabaña',
   bothCabins: 'Las dos',
   previousMonth: 'Mes anterior',
@@ -41,6 +45,13 @@ export const PUBLIC_COPY = {
   legendOccupied: 'Ocupado',
   whatsappButton: 'Escribinos por WhatsApp',
   loading: 'Cargando disponibilidad…',
+  // Screen 11/12's own two photo-placeholder labels, lifted verbatim during
+  // the frontend-visual-design pass -- the tiles themselves stay striped
+  // placeholders per the handoff's one documented fidelity exception (no
+  // photo asset ships with this change).
+  housesTitle: 'Las casas',
+  photoCasaAzul: 'foto casa azul',
+  photoDosAguas: 'foto dos aguas',
   // Design D32's own drafted line (shared/copy/errors.ts) reads correctly
   // here too -- no public-page-specific override is needed for this run's
   // scope, so no separate sentence is invented.

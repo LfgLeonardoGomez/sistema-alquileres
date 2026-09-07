@@ -1,6 +1,7 @@
 import { Temporal } from 'temporal-polyfill'
 import { getMonthGrid, type YearMonth } from '../../../shared/calendar/monthGrid'
 import type { PlainDate } from '../../../shared/date/parsePlainDate'
+import { dayBarClass, dayNumberClass, weekdayHeaderClass, type DayBarKind } from '../../../shared/ui'
 
 // design D28, tasks 5.8-5.11: "The picker's interaction rule, which the
 // handoff states twice and appears to contradict itself." Both are true
@@ -70,6 +71,22 @@ function isWithinSelectedRange(date: PlainDate, range: SelectedRange | null): bo
   return date >= range.checkIn && date < range.checkOut
 }
 
+// Geometry only (D28): given a boolean membership test, decides whether
+// `date` is the start/end/middle/only night of its own contiguous run --
+// the same rounding rule `PrivateMonthCalendar.tsx` gets for free from
+// `computeSegments`'s `SegmentKind`, recomputed here because this picker's
+// "occupied" and "selected" sets are plain `Set<string>`/range booleans,
+// not pre-segmented ranges.
+function runKind(date: PlainDate, isMember: (candidate: PlainDate) => boolean): DayBarKind {
+  const parsed = Temporal.PlainDate.from(date)
+  const before = isMember(parsed.subtract({ days: 1 }).toString() as PlainDate)
+  const after = isMember(parsed.add({ days: 1 }).toString() as PlainDate)
+  if (!before && !after) return 'single'
+  if (!before) return 'start'
+  if (!after) return 'end'
+  return 'middle'
+}
+
 export function RangePickerCalendar({ month, occupiedNights, pendingEntrada, selectedRange, onEntradaSelected, onRangeAttempt }: Props) {
   const grid = getMonthGrid(month)
 
@@ -101,12 +118,14 @@ export function RangePickerCalendar({ month, occupiedNights, pendingEntrada, sel
   }
 
   return (
-    <table>
+    <table className="w-full border-separate border-spacing-0 rounded-card border border-card-border bg-surface px-2.5 pt-3.5 pb-[18px]">
       <thead>
         <tr>
           {WEEKDAY_INITIALS.map((initial, index) => (
             // A fixed, never-reordered 7-item header -- an index key is safe here.
-            <th key={index}>{initial}</th>
+            <th key={index} className={`${weekdayHeaderClass} pb-1.5 font-extrabold`}>
+              {initial}
+            </th>
           ))}
         </tr>
       </thead>
@@ -122,9 +141,19 @@ export function RangePickerCalendar({ month, occupiedNights, pendingEntrada, sel
               const occupied = occupiedNights.has(cell.date)
               const isPendingEntrada = cell.date === pendingEntrada
               const isSelected = isWithinSelectedRange(cell.date, selectedRange)
+              const highlighted = occupied || isSelected || isPendingEntrada
+
+              let barClass: string | null = null
+              if (isSelected) {
+                barClass = `${dayBarClass(runKind(cell.date, (candidate) => isWithinSelectedRange(candidate, selectedRange)))} bg-accent`
+              } else if (isPendingEntrada) {
+                barClass = `${dayBarClass('single')} bg-accent`
+              } else if (occupied) {
+                barClass = `${dayBarClass(runKind(cell.date, (candidate) => occupiedNights.has(candidate)))} bg-disabled`
+              }
 
               return (
-                <td key={cell.date}>
+                <td key={cell.date} className="relative h-[50px] p-0 text-center">
                   <button
                     type="button"
                     data-testid={`day-${cell.date}`}
@@ -132,9 +161,11 @@ export function RangePickerCalendar({ month, occupiedNights, pendingEntrada, sel
                     data-pending-entrada={isPendingEntrada ? 'true' : undefined}
                     data-selected={isSelected ? 'true' : undefined}
                     aria-pressed={isPendingEntrada || isSelected}
+                    className="relative flex h-full w-full items-center justify-center"
                     onClick={() => handleTap(cell.date)}
                   >
-                    {dayOfMonth(cell.date)}
+                    {barClass !== null ? <div className={barClass} /> : null}
+                    <span className={dayNumberClass(highlighted, isSelected || isPendingEntrada)}>{dayOfMonth(cell.date)}</span>
                   </button>
                 </td>
               )

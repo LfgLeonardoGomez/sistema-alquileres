@@ -1,6 +1,7 @@
 import { getMonthGrid, type YearMonth } from '../../shared/calendar/monthGrid'
 import type { DaySegment } from '../../shared/calendar/segments'
-import type { PastelSlot } from './pastels'
+import { dayBarClass, dayNumberClass, weekdayHeaderClass } from '../../shared/ui'
+import { PASTEL_BAR_CLASS, type PastelSlot } from './pastels'
 
 // tasks 4.14-4.16: the private, per-cabin surface of design D28's headless
 // core -- `PublicMonthCalendar.tsx`'s own authenticated-tree sibling, same
@@ -44,12 +45,14 @@ export function PrivateMonthCalendar({ month, segments, slotByKey }: Props) {
   }
 
   return (
-    <table>
+    <table className="w-full border-separate border-spacing-0 rounded-card border border-card-border bg-surface px-2.5 pt-3.5 pb-[18px]">
       <thead>
         <tr>
           {WEEKDAY_INITIALS.map((initial, index) => (
             // A fixed, never-reordered 7-item header -- an index key is safe here.
-            <th key={index}>{initial}</th>
+            <th key={index} className={`${weekdayHeaderClass} pb-1.5 font-extrabold`}>
+              {initial}
+            </th>
           ))}
         </tr>
       </thead>
@@ -71,8 +74,18 @@ export function PrivateMonthCalendar({ month, segments, slotByKey }: Props) {
                   data-testid={`day-${cell.date}`}
                   data-occupied={occupied ? 'true' : undefined}
                   data-pastel-slots={occupied ? daySegments.map((segment) => slotByKey.get(segment.key)).join(',') : undefined}
+                  className="relative h-[50px] text-center"
                 >
-                  {dayOfMonth(cell.date)}
+                  {daySegments.map((segment) => {
+                    const slot = slotByKey.get(segment.key) ?? 0
+                    return (
+                      <div
+                        key={segment.key}
+                        className={`${dayBarClass(segment.kind)} ${PASTEL_BAR_CLASS[slot as PastelSlot]}`}
+                      />
+                    )
+                  })}
+                  <span className={dayNumberClass(occupied)}>{dayOfMonth(cell.date)}</span>
                 </td>
               )
             })}

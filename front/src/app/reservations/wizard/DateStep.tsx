@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Temporal } from 'temporal-polyfill'
 import type { YearMonth } from '../../../shared/calendar/monthGrid'
-import { formatDayMonth } from '../../../shared/date/format'
+import { formatDayMonth, formatMonthYear } from '../../../shared/date/format'
 import { nightsBetween } from '../../../shared/date/nightsBetween'
 import type { PlainDate } from '../../../shared/date/parsePlainDate'
 import { todayAR } from '../../../shared/date/todayAR'
@@ -11,6 +11,7 @@ import {
   occupiedNightsBanner,
   wizardStepLabel,
 } from '../../../shared/copy/reservations'
+import { Button, navButtonClass } from '../../../shared/ui'
 import { occupiedNightsFor } from '../occupancy'
 import { useReservationsForCabin } from '../useReservationsForCabin'
 import { RangePickerCalendar } from './RangePickerCalendar'
@@ -93,19 +94,36 @@ export function DateStep({ cabin, initialDates, onContinue, onBack }: Props) {
   const nights = selectedRange !== null ? nightsBetween(selectedRange.checkIn, selectedRange.checkOut) : 0
 
   return (
-    <div>
-      <button type="button" onClick={onBack}>
-        {RESERVATION_WIZARD_COPY.volver}
-      </button>
-      <p>{wizardStepLabel(2)}</p>
-      <h1>{RESERVATION_WIZARD_COPY.dateStepTitle}</h1>
-      <p role="note">{occupiedNightsBanner(cabin.name)}</p>
-
-      <div role="group" aria-label={wizardStepLabel(2)}>
-        <button type="button" aria-label={RESERVATION_WIZARD_COPY.previousMonth} onClick={() => setMonth((current) => shiftMonth(current, -1))}>
+    <div className="flex min-h-screen flex-col gap-[18px] bg-page px-[18px] pt-16 pb-5">
+      <div className="flex items-center gap-3.5">
+        <button type="button" aria-label={RESERVATION_WIZARD_COPY.volver} className={navButtonClass} onClick={onBack}>
           {RESERVATION_WIZARD_COPY.previousMonthGlyph}
         </button>
-        <button type="button" aria-label={RESERVATION_WIZARD_COPY.nextMonth} onClick={() => setMonth((current) => shiftMonth(current, 1))}>
+        <div className="flex flex-col">
+          <p className="text-[15px] font-extrabold text-faint-2">{wizardStepLabel(2)}</p>
+          <h1 className="text-[22px] font-extrabold text-primary">{RESERVATION_WIZARD_COPY.dateStepTitle}</h1>
+        </div>
+      </div>
+      <p role="note" className="rounded-2xl bg-accent-tint px-[18px] py-3.5 text-[17px] font-bold text-accent-ink">
+        {occupiedNightsBanner(cabin.name)}
+      </p>
+
+      <div role="group" aria-label={wizardStepLabel(2)} className="flex items-center justify-between px-1">
+        <button
+          type="button"
+          aria-label={RESERVATION_WIZARD_COPY.previousMonth}
+          className={navButtonClass}
+          onClick={() => setMonth((current) => shiftMonth(current, -1))}
+        >
+          {RESERVATION_WIZARD_COPY.previousMonthGlyph}
+        </button>
+        <h2 className="text-xl font-extrabold text-primary">{formatMonthYear(month)}</h2>
+        <button
+          type="button"
+          aria-label={RESERVATION_WIZARD_COPY.nextMonth}
+          className={navButtonClass}
+          onClick={() => setMonth((current) => shiftMonth(current, 1))}
+        >
           {RESERVATION_WIZARD_COPY.nextMonthGlyph}
         </button>
       </div>
@@ -119,19 +137,30 @@ export function DateStep({ cabin, initialDates, onContinue, onBack }: Props) {
         onRangeAttempt={handleRangeAttempt}
       />
 
-      {guardMessage !== null ? <p role="alert">{guardMessage}</p> : null}
+      {guardMessage !== null ? (
+        <p role="alert" className="text-base font-bold text-warm">
+          {guardMessage}
+        </p>
+      ) : null}
+
+      <div className="flex-1" />
 
       {selectedRange !== null ? (
-        <section aria-label={RESERVATION_WIZARD_COPY.resumenLabel}>
-          <p>
-            {RESERVATION_WIZARD_COPY.entradaLabel} {formatDayMonth(selectedRange.checkIn)} · {RESERVATION_WIZARD_COPY.salidaLabel}{' '}
-            {formatDayMonth(selectedRange.checkOut)}
-          </p>
-          <p>{nightsCountLabel(nights)}</p>
-          <button type="button" onClick={() => onContinue(selectedRange)}>
+        <>
+          <section
+            aria-label={RESERVATION_WIZARD_COPY.resumenLabel}
+            className="flex flex-col gap-1 rounded-[20px] border border-card-border bg-surface p-5"
+          >
+            <p className="text-xl font-extrabold text-primary">
+              {RESERVATION_WIZARD_COPY.entradaLabel} {formatDayMonth(selectedRange.checkIn)} · {RESERVATION_WIZARD_COPY.salidaLabel}{' '}
+              {formatDayMonth(selectedRange.checkOut)}
+            </p>
+            <p className="text-lg text-muted-2">{nightsCountLabel(nights)}</p>
+          </section>
+          <Button variant="primary" className="h-[66px]" onClick={() => onContinue(selectedRange)}>
             {RESERVATION_WIZARD_COPY.seguir}
-          </button>
-        </section>
+          </Button>
+        </>
       ) : null}
     </div>
   )

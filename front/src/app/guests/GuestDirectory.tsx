@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { GUEST_DIRECTORY_COPY, guestOwesLabel, guestStayCountLabel } from '../../shared/copy/guests'
 import { SHELL_COPY } from '../../shared/copy/shell'
 import { formatMoney } from '../../shared/money/formatMoney'
+import { Avatar, Button, inputClass, rowClass } from '../../shared/ui'
 import { TabBar } from '../shell/TabBar'
 import { useCabins } from '../reservations/useCabins'
 import { useClients } from '../reservations/useClients'
@@ -53,49 +54,68 @@ export function GuestDirectory() {
       : allGuests.filter((guest) => guest.full_name.toLowerCase().includes(query) || guest.phone.includes(query))
 
   return (
-    <div>
-      <h1>{GUEST_DIRECTORY_COPY.title}</h1>
+    <div className="flex min-h-screen flex-col bg-page">
+      <div className="flex flex-1 flex-col gap-4 px-5 pt-16 pb-5">
+        <h1 className="text-[30px] font-extrabold tracking-tight text-primary">{GUEST_DIRECTORY_COPY.title}</h1>
 
-      <label>
-        {GUEST_DIRECTORY_COPY.searchLabel}
-        <input value={search} onChange={(event) => setSearch(event.target.value)} />
-      </label>
+        <label className="flex flex-col">
+          <span className="sr-only">{GUEST_DIRECTORY_COPY.searchLabel}</span>
+          <input
+            className={inputClass}
+            placeholder={GUEST_DIRECTORY_COPY.searchLabel}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
 
-      {allGuests.length === 0 ? (
-        <p>{SHELL_COPY.guestsEmpty}</p>
-      ) : (
-        <ul>
-          {guests.map((guest) => {
-            const summary = summarizeGuestStays(reservations.data ?? [], guest.id)
-            return (
-              <li key={guest.id} data-tone={guest.is_active ? undefined : 'muted'}>
-                <button type="button" onClick={() => setOpenGuestId(guest.id)}>
-                  <span>{guest.full_name}</span>
-                  <span>{guest.phone}</span>
-                  <span>{guestStayCountLabel(summary.stayCount)}</span>
-                  {summary.balanceCentavos > 0 ? <span>{guestOwesLabel(formatMoney(summary.balanceCentavos))}</span> : null}
-                  {!guest.is_active ? <span>{GUEST_DIRECTORY_COPY.inactiveTag}</span> : null}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+        {allGuests.length === 0 ? (
+          <p className="text-lg text-muted">{SHELL_COPY.guestsEmpty}</p>
+        ) : (
+          <ul className="flex flex-col gap-3.5">
+            {guests.map((guest) => {
+              const summary = summarizeGuestStays(reservations.data ?? [], guest.id)
+              return (
+                <li key={guest.id} data-tone={guest.is_active ? undefined : 'muted'}>
+                  <button type="button" className={`${rowClass} w-full data-[tone=muted]:opacity-50`} onClick={() => setOpenGuestId(guest.id)}>
+                    <Avatar name={guest.full_name} muted={!guest.is_active} />
+                    <div className="flex flex-1 flex-col gap-0.5 text-left">
+                      <span className={`text-[19px] font-bold ${guest.is_active ? 'text-primary' : 'text-faint-2'}`}>{guest.full_name}</span>
+                      <span className="text-base text-muted-2">
+                        {/* `GuestDirectory.test.tsx` queries `guestStayCountLabel`'s
+                            OWN exact string ("2 estadías") as one element's
+                            direct text -- kept as its own `<span>`, never
+                            concatenated with the phone/inactive-tag half into
+                            one text run (see engram: RTL getNodeText gotcha). */}
+                        {guest.is_active ? <span>{guest.phone}</span> : <span>{GUEST_DIRECTORY_COPY.inactiveTag}</span>} ·{' '}
+                        <span>{guestStayCountLabel(summary.stayCount)}</span>
+                      </span>
+                    </div>
+                    {summary.balanceCentavos > 0 ? (
+                      <span className="text-base font-extrabold text-warm">{guestOwesLabel(formatMoney(summary.balanceCentavos))}</span>
+                    ) : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
 
-      <button type="button" onClick={() => setIsAddOpen(true)}>
-        {GUEST_DIRECTORY_COPY.addGuest}
-      </button>
+        <div className="flex-1" />
+        <Button variant="primary" onClick={() => setIsAddOpen(true)}>
+          {GUEST_DIRECTORY_COPY.addGuest}
+        </Button>
 
-      {isAddOpen ? <AddGuestSheet onClose={() => setIsAddOpen(false)} /> : null}
+        {isAddOpen ? <AddGuestSheet onClose={() => setIsAddOpen(false)} /> : null}
 
-      {openGuest !== null ? (
-        <GuestSheet
-          guest={openGuest}
-          reservations={reservations.data ?? []}
-          cabins={cabins.data ?? []}
-          onClose={() => setOpenGuestId(null)}
-        />
-      ) : null}
+        {openGuest !== null ? (
+          <GuestSheet
+            guest={openGuest}
+            reservations={reservations.data ?? []}
+            cabins={cabins.data ?? []}
+            onClose={() => setOpenGuestId(null)}
+          />
+        ) : null}
+      </div>
 
       <TabBar />
     </div>

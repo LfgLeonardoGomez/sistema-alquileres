@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CABIN_EDIT_SHEET_COPY, CABIN_FORM_COPY } from '../../shared/copy/cabins'
 import { resolveErrorCopy } from '../../shared/errors/resolve'
+import { Button, Sheet } from '../../shared/ui'
 import type { Cabin } from '../reservations/useCabins'
 import { CabinForm } from './CabinForm'
 import { DeactivateCabinSheet } from './DeactivateCabinSheet'
@@ -32,28 +33,34 @@ export function CabinEditSheet({ cabin, onClose }: Props) {
   }
 
   return (
-    <div role="dialog" aria-label={cabin.name}>
-      <CabinForm initialName={cabin.name} submitLabel={CABIN_FORM_COPY.renameSubmit} onSubmit={(values) => void handleRename(values)} />
+    <Sheet>
+      <div role="dialog" aria-label={cabin.name} className="flex flex-col gap-4">
+        <CabinForm initialName={cabin.name} submitLabel={CABIN_FORM_COPY.renameSubmit} onSubmit={(values) => void handleRename(values)} />
 
-      {renameCabin.isError ? <p role="alert">{resolveErrorCopy(renameCabin.error)}</p> : null}
+        {renameCabin.isError ? (
+          <p role="alert" className="text-base font-bold text-warm">
+            {resolveErrorCopy(renameCabin.error)}
+          </p>
+        ) : null}
 
-      <button type="button" onClick={() => setIsDeactivateOpen(true)}>
-        {CABIN_EDIT_SHEET_COPY.deactivate}
-      </button>
-      <button type="button" onClick={onClose}>
-        {CABIN_EDIT_SHEET_COPY.close}
-      </button>
+        <Button variant="secondary" onClick={() => setIsDeactivateOpen(true)}>
+          {CABIN_EDIT_SHEET_COPY.deactivate}
+        </Button>
+        <button type="button" className="text-center text-[17px] font-bold text-faint" onClick={onClose}>
+          {CABIN_EDIT_SHEET_COPY.close}
+        </button>
 
-      {isDeactivateOpen ? (
-        <DeactivateCabinSheet
-          cabinId={cabin.id}
-          onClose={() => setIsDeactivateOpen(false)}
-          onDeactivated={() => {
-            setIsDeactivateOpen(false)
-            onClose()
-          }}
-        />
-      ) : null}
-    </div>
+        {isDeactivateOpen ? (
+          <DeactivateCabinSheet
+            cabinId={cabin.id}
+            onClose={() => setIsDeactivateOpen(false)}
+            onDeactivated={() => {
+              setIsDeactivateOpen(false)
+              onClose()
+            }}
+          />
+        ) : null}
+      </div>
+    </Sheet>
   )
 }

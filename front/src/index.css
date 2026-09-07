@@ -10,114 +10,92 @@
   src: url('/fonts/nunito-sans-variable-latin.woff2') format('woff2');
 }
 
+@import 'tailwindcss';
+
+/* Design handoff tokens (openspec/changes/frontend-visual-design/handoff/README.md).
+   "Colors, type sizes, radii, spacing and copy are final and should be
+   matched." Every color/radius/font token below is named after the
+   README's own vocabulary so screens can reference `bg-surface`,
+   `text-primary`, `bg-accent`, `rounded-card`, etc. instead of scattering
+   raw hex through JSX. */
+@theme {
+  --font-sans: 'Nunito Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  /* Backgrounds / surfaces */
+  --color-page: #f6f6fb;
+  --color-surface: #ffffff;
+  --color-card-border: #ececf5;
+  --color-input-border: #e4e4ef;
+  --color-divider: #efeff7;
+
+  /* Text */
+  --color-primary: #37384a; /* text primary */
+  --color-secondary: #6e7085; /* text secondary */
+  --color-muted: #7c7f92; /* text muted */
+  --color-muted-2: #83869a; /* text muted, alt shade used in rows/captions */
+  --color-faint: #9a9cb0; /* text faint */
+  --color-faint-2: #a9abbe; /* text faint, alt shade used for step/day labels */
+
+  /* Accent (buttons, active tab) */
+  --color-accent: #8a90e8;
+  --color-accent-ink: #6b72d6; /* accent text on white */
+  --color-accent-tint: #eff0fc;
+  --color-accent-tint-2: #e7e8fb;
+  --color-accent-soft: #dcdef9; /* occupied bar / cabin A dot */
+  --color-accent-soft-2: #a9aeee; /* progress fill, cabin A dot alt */
+
+  /* Green (paid, WhatsApp, cabin B) */
+  --color-green: #7fc59d; /* button */
+  --color-green-dot: #9bd3b6;
+  --color-green-bar: #ddefe6;
+  --color-green-tint: #e4f2ea;
+  --color-green-ink: #7fa98f; /* "Pagado" text */
+
+  /* Warm (owed, destructive) */
+  --color-warm: #c87a48; /* owed text, "Cancelar" label */
+  --color-warm-cancel: #d9946b; /* destructive button */
+  --color-warm-bar: #fbe4d6;
+  --color-warm-tint: #fdf3ec;
+  --color-warm-dot: #f0b893;
+
+  /* Neutral occupied / disabled */
+  --color-occupied: #e4e5f0; /* public calendar occupied bar */
+  --color-disabled: #e6e6ee; /* private wizard: taken, not selectable */
+  --color-tab-inactive: #d8d9e6;
+  --color-scrim: #6c6e85; /* sheet backdrop */
+  --color-track: #e9e9f3; /* segmented control track (app) */
+  --color-track-2: #f2f2f8; /* segmented control track (public), "No, dejarla" bg */
+  --color-surface-muted: #f4f4fa; /* public month-nav button bg */
+  --color-progress-track: #ededf6;
+  --color-progress-fill: #a9aeee;
+
+  /* Radii */
+  --radius-card: 22px;
+  --radius-sheet: 30px;
+  --radius-field: 16px; /* inputs */
+  --radius-row: 18px; /* list rows, secondary buttons */
+  --radius-btn: 20px; /* primary buttons */
+  --radius-btn-sm: 18px;
+  --radius-pill: 999px;
+}
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: 'Nunito Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: 'Nunito Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  color-scheme: light;
+  font-family: var(--font-sans);
+  color: var(--color-primary);
+  background: var(--color-page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
 }
 
 body {
   margin: 0;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
 }

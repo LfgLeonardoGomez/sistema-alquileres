@@ -1,5 +1,6 @@
 import { GUEST_EDIT_SHEET_COPY } from '../../shared/copy/guests'
 import { resolveErrorCopy } from '../../shared/errors/resolve'
+import { Button, Sheet } from '../../shared/ui'
 import type { Client } from '../reservations/useClients'
 import { GuestForm } from './GuestForm'
 import { useUpdateGuest } from './useUpdateGuest'
@@ -41,21 +42,27 @@ export function GuestEditSheet({ guest, onClose, onSaved }: Props) {
   }
 
   return (
-    <div role="dialog" aria-label={GUEST_EDIT_SHEET_COPY.title}>
-      <h2>{GUEST_EDIT_SHEET_COPY.title}</h2>
+    <Sheet>
+      <div role="dialog" aria-label={GUEST_EDIT_SHEET_COPY.title} className="flex flex-col gap-4">
+        <h2 className="text-2xl font-extrabold text-primary">{GUEST_EDIT_SHEET_COPY.title}</h2>
 
-      <GuestForm
-        initialFullName={guest.full_name}
-        initialPhone={guest.phone}
-        submitLabel={GUEST_EDIT_SHEET_COPY.save}
-        onSubmit={(values) => void handleSubmit(values)}
-      />
+        <GuestForm
+          initialFullName={guest.full_name}
+          initialPhone={guest.phone}
+          submitLabel={GUEST_EDIT_SHEET_COPY.save}
+          onSubmit={(values) => void handleSubmit(values)}
+        />
 
-      {updateGuest.isError ? <p role="alert">{resolveErrorCopy(updateGuest.error)}</p> : null}
+        {updateGuest.isError ? (
+          <p role="alert" className="text-base font-bold text-warm">
+            {resolveErrorCopy(updateGuest.error)}
+          </p>
+        ) : null}
 
-      <button type="button" onClick={onClose}>
-        {GUEST_EDIT_SHEET_COPY.close}
-      </button>
-    </div>
+        <Button variant="secondary" onClick={onClose}>
+          {GUEST_EDIT_SHEET_COPY.close}
+        </Button>
+      </div>
+    </Sheet>
   )
 }

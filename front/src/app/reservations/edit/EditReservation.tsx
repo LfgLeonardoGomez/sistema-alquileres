@@ -17,6 +17,7 @@ import { resolveErrorCopy } from '../../../shared/errors/resolve'
 import { formatMoney } from '../../../shared/money/formatMoney'
 import { nightsBetween } from '../../../shared/date/nightsBetween'
 import type { PlainDate } from '../../../shared/date/parsePlainDate'
+import { Button, navButtonClass, segmentedButtonClass, segmentedTrackClass } from '../../../shared/ui'
 import { balanceLine } from '../balanceLine'
 import { displayBalance } from '../displayBalance'
 import { effectiveTotalCentavos, type PriceMode } from '../effectiveTotal'
@@ -194,15 +195,22 @@ function EditReservationForm({ stay, cabinName }: Props) {
   }
 
   return (
-    <div>
-      <Link to={`/reserva/${stay.id}`}>{RESERVATION_DETAIL_COPY.volver}</Link>
-      <h1>{RESERVATION_EDIT_COPY.title}</h1>
-      <p role="note">{occupiedNightsBanner(cabinName)}</p>
+    <div className="flex min-h-screen flex-col gap-[18px] bg-page px-[18px] pt-16 pb-[26px]">
+      <div className="flex items-center gap-3.5">
+        <Link to={`/reserva/${stay.id}`} aria-label={RESERVATION_DETAIL_COPY.volver} className={navButtonClass}>
+          {RESERVATION_WIZARD_COPY.previousMonthGlyph}
+        </Link>
+        <h1 className="text-[22px] font-extrabold text-primary">{RESERVATION_EDIT_COPY.title}</h1>
+      </div>
+      <p role="note" className="rounded-2xl bg-accent-tint px-[18px] py-3.5 text-[17px] font-bold text-accent-ink">
+        {occupiedNightsBanner(cabinName)}
+      </p>
 
-      <div role="group" aria-label={RESERVATION_WIZARD_COPY.dateStepTitle}>
+      <div role="group" aria-label={RESERVATION_WIZARD_COPY.dateStepTitle} className="flex items-center justify-between px-1">
         <button
           type="button"
           aria-label={RESERVATION_WIZARD_COPY.previousMonth}
+          className={navButtonClass}
           onClick={() => setMonth((current) => shiftMonth(current, -1))}
         >
           {RESERVATION_WIZARD_COPY.previousMonthGlyph}
@@ -210,6 +218,7 @@ function EditReservationForm({ stay, cabinName }: Props) {
         <button
           type="button"
           aria-label={RESERVATION_WIZARD_COPY.nextMonth}
+          className={navButtonClass}
           onClick={() => setMonth((current) => shiftMonth(current, 1))}
         >
           {RESERVATION_WIZARD_COPY.nextMonthGlyph}
@@ -225,54 +234,88 @@ function EditReservationForm({ stay, cabinName }: Props) {
         onRangeAttempt={handleRangeAttempt}
       />
 
-      {guardMessage !== null ? <p role="alert">{guardMessage}</p> : null}
+      {guardMessage !== null ? (
+        <p role="alert" className="text-base font-bold text-warm">
+          {guardMessage}
+        </p>
+      ) : null}
 
-      <section aria-label={RESERVATION_WIZARD_COPY.resumenLabel}>
-        <p>
+      <section
+        aria-label={RESERVATION_WIZARD_COPY.resumenLabel}
+        className="flex flex-col gap-1 rounded-[20px] border border-card-border bg-surface p-5"
+      >
+        <p className="text-xl font-extrabold text-primary">
           {RESERVATION_WIZARD_COPY.entradaLabel} {formatDayMonth(dates.checkIn)} · {RESERVATION_WIZARD_COPY.salidaLabel}{' '}
           {formatDayMonth(dates.checkOut)}
         </p>
-        <p>{nightsCountLabel(nights)}</p>
+        <p className="text-lg text-muted-2">{nightsCountLabel(nights)}</p>
       </section>
 
-      <div role="group" aria-label={RESERVATION_WIZARD_COPY.priceStepTitle}>
-        <button type="button" aria-pressed={priceMode === 'per_night'} onClick={() => setPriceMode('per_night')}>
+      <div role="group" aria-label={RESERVATION_WIZARD_COPY.priceStepTitle} className={segmentedTrackClass}>
+        <button
+          type="button"
+          aria-pressed={priceMode === 'per_night'}
+          className={segmentedButtonClass(priceMode === 'per_night', 'h-[52px]')}
+          onClick={() => setPriceMode('per_night')}
+        >
           {RESERVATION_WIZARD_COPY.perNight}
         </button>
-        <button type="button" aria-pressed={priceMode === 'total'} onClick={() => setPriceMode('total')}>
+        <button
+          type="button"
+          aria-pressed={priceMode === 'total'}
+          className={segmentedButtonClass(priceMode === 'total', 'h-[52px]')}
+          onClick={() => setPriceMode('total')}
+        >
           {RESERVATION_WIZARD_COPY.total}
         </button>
       </div>
 
-      <label>
-        {RESERVATION_WIZARD_COPY.amountLabel}
-        <input type="number" value={amountPesos} onChange={(event) => setAmountPesos(event.target.value)} />
+      <label className="flex flex-col gap-2">
+        <span className="text-base font-bold text-secondary">{RESERVATION_WIZARD_COPY.amountLabel}</span>
+        <input
+          type="number"
+          className="h-[58px] rounded-field border border-input-border bg-surface px-[18px] text-[19px] text-primary focus:outline-none focus:ring-2 focus:ring-accent-soft-2"
+          value={amountPesos}
+          onChange={(event) => setAmountPesos(event.target.value)}
+        />
       </label>
 
       {/* D34: "The rescale rule is SHOWN, not inferred... Otherwise she
           extends a stay by one night and the total either moves or fails to
           move without her having asked for either." */}
-      <section aria-label={RESERVATION_DETAIL_COPY.totalLabel}>
-        <p>
-          <span>{RESERVATION_DETAIL_COPY.totalLabel}</span> <span>{formatMoney(totalCentavos)}</span>
+      <section
+        aria-label={RESERVATION_DETAIL_COPY.totalLabel}
+        className="flex flex-col gap-2.5 rounded-card border border-card-border bg-surface p-[22px]"
+      >
+        <p className="flex justify-between text-lg">
+          <span className="text-muted">{RESERVATION_DETAIL_COPY.totalLabel}</span>
+          <span className="font-bold text-primary">{formatMoney(totalCentavos)}</span>
         </p>
-        {priceMode === 'per_night' ? <p>{rescaleHelper(nights, formatMoney(amountCentavos))}</p> : null}
-        <p>
-          <span>{RESERVATION_DETAIL_COPY.paidLabel}</span> <span>{formatMoney(stay.paidAmountCentavos)}</span>
+        {priceMode === 'per_night' ? (
+          <p className="text-base text-faint">{rescaleHelper(nights, formatMoney(amountCentavos))}</p>
+        ) : null}
+        <p className="flex justify-between text-lg">
+          <span className="text-muted">{RESERVATION_DETAIL_COPY.paidLabel}</span>
+          <span className="font-bold text-primary">{formatMoney(stay.paidAmountCentavos)}</span>
         </p>
-        <p>
+        <p className="flex items-baseline justify-between">
           {/* The ABSOLUTE amount, the direction carried by the sentence
               beside it -- never a literal `-$` (6.2's own rule). */}
-          <span>{RESERVATION_DETAIL_COPY.saldoLabel}</span> <span>{formatMoney(Math.abs(previewBalanceCentavos))}</span>
+          <span className="text-xl font-extrabold text-primary">{RESERVATION_DETAIL_COPY.saldoLabel}</span>
+          <span className="text-2xl font-extrabold text-warm">{formatMoney(Math.abs(previewBalanceCentavos))}</span>
         </p>
-        {previewDirection !== null ? <p>{previewDirection}</p> : null}
+        {previewDirection !== null ? <p className="text-base text-muted-2">{previewDirection}</p> : null}
       </section>
 
-      {updateReservation.isError ? <p role="alert">{resolveErrorCopy(updateReservation.error, conflictCopy)}</p> : null}
+      {updateReservation.isError ? (
+        <p role="alert" className="text-base font-bold text-warm">
+          {resolveErrorCopy(updateReservation.error, conflictCopy)}
+        </p>
+      ) : null}
 
-      <button type="button" onClick={() => void handleSave()}>
+      <Button variant="primary" className="h-[68px]" onClick={() => void handleSave()}>
         {RESERVATION_EDIT_COPY.guardar}
-      </button>
+      </Button>
     </div>
   )
 }

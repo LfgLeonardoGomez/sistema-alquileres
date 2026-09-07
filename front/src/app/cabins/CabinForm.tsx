@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CABIN_FORM_COPY } from '../../shared/copy/cabins'
+import { Button, fieldLabelClass, inputClass } from '../../shared/ui'
 
 // task 8.2 -- the single name field shared by add-cabin and rename, on
 // `GuestForm.tsx`'s own precedent of one small input component reused by
@@ -28,14 +29,14 @@ export function CabinForm({ initialName = '', submitLabel, onSubmit }: Props) {
   }
 
   return (
-    <div>
-      <label>
-        {CABIN_FORM_COPY.nameLabel}
-        <input value={name} onChange={(event) => setName(event.target.value)} />
+    <div className="flex flex-col gap-4">
+      <label className="flex flex-col gap-2">
+        <span className={fieldLabelClass}>{CABIN_FORM_COPY.nameLabel}</span>
+        <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} />
       </label>
-      <button type="button" disabled={!canSubmit} onClick={handleSubmit}>
+      <Button variant="primary" disabled={!canSubmit} onClick={handleSubmit}>
         {submitLabel}
-      </button>
+      </Button>
     </div>
   )
 }
