@@ -33,6 +33,11 @@ function dashboardHandler() {
 }
 
 async function renderWizardAt(path: string) {
+  // 10.14's guard now wraps every wizard route -- a session is required for
+  // these fresh `createMemoryRouter` instances to reach the wizard at all,
+  // matching `routes.test.tsx`'s own established fix for the same guard.
+  const { useSessionStore } = await import('../../session/store')
+  useSessionStore.getState().setToken('a-valid-looking-token')
   const { routeConfig } = await import('../../../routes')
   const router = createMemoryRouter(routeConfig, { initialEntries: [path] })
   render(<RouterProvider router={router} />)
@@ -57,9 +62,16 @@ describe('Wizard', () => {
     import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     Object.assign(import.meta.env, originalEnv)
     queryClient.clear()
+    // Undoes `renderWizardAt`'s own `setToken` (and this file's own 5.30/
+    // 10.22 test, which clears it itself but harmlessly re-clears here
+    // too) -- the same `useSessionStore` singleton `routes.test.tsx`
+    // resets per-test, so an authenticated state never leaks across `it()`
+    // boundaries in this file either.
+    const { useSessionStore } = await import('../../session/store')
+    useSessionStore.getState().clearToken()
   })
 
   // task 5.24/5.25, `reservation-recording` spec "Wizard State Persists
@@ -201,6 +213,32 @@ describe('Wizard', () => {
     const draft = useWizardDraftStore.getState()
     expect(draft.cabin).toEqual({ id: CASA_AZUL, name: 'Casa Azul' })
     expect(draft.dates).toEqual({ checkIn: '2026-09-08', checkOut: '2026-09-12' })
+
+    // task 10.22 [TRIANGULATE], owner-session spec's "Signing back in
+    // resumes the wizard where it left off" -- 5.30 above proves only the
+    // first half (the draft survives the router-only navigation); this is
+    // the second half, actually signing back in on the login screen it
+    // landed on and arriving back at step 3 with the same cabin and dates
+    // still on it. 5.30's own assertions above are unchanged.
+    server.use(
+      http.post('http://localhost:8000/auth/login', () =>
+        HttpResponse.json({ access_token: 'a.b.c', token_type: 'bearer' }),
+      ),
+    )
+    await userEvent.type(screen.getByLabelText(SESSION_COPY.emailLabel), 'owner@example.com')
+    await userEvent.type(screen.getByLabelText(SESSION_COPY.passwordLabel), 'correct-password-123')
+    await userEvent.click(screen.getByRole('button', { name: SESSION_COPY.submit }))
+
+    // Back on step 3, GuestStep's own heading -- Wizard.tsx's own step-3
+    // prerequisite guard (`draft.cabin === null || draft.dates === null`)
+    // would have bounced her to step 1 had the draft NOT survived, so this
+    // heading appearing at all is already part of the proof.
+    expect(await screen.findByRole('heading', { name: GUESTS_COPY.guestStepTitle })).toBeInTheDocument()
+    expect(screen.queryByLabelText(SESSION_COPY.emailLabel)).not.toBeInTheDocument()
+
+    const draftAfterSignIn = useWizardDraftStore.getState()
+    expect(draftAfterSignIn.cabin).toEqual({ id: CASA_AZUL, name: 'Casa Azul' })
+    expect(draftAfterSignIn.dates).toEqual({ checkIn: '2026-09-08', checkOut: '2026-09-12' })
 
     useSessionStore.getState().clearToken()
     useWizardDraftStore.getState().reset()

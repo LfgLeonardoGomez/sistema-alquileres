@@ -148,17 +148,53 @@ describe('apiRequest', () => {
       const { router } = await import('../../routes')
       const { useSessionStore } = await import('../session/store')
       useSessionStore.getState().setToken('a-valid-looking-token')
+      // A known, deterministic starting location -- 10.21's own extension
+      // of this exact call (Note B) reads `router.state.location`, so a
+      // real (unmocked) navigate first is what makes the assertion below
+      // deterministic rather than dependent on wherever a PRIOR test in
+      // this file happened to leave the shared `router` singleton.
+      await router.navigate('/inicio')
       const navigateSpy = vi.spyOn(router, 'navigate').mockImplementation(() => Promise.resolve())
 
       const { apiRequest } = await import('./client')
 
       await expect(apiRequest('/reservations')).rejects.toEqual({ status: 401, code: null })
       expect(useSessionStore.getState().token).toBeNull()
-      // Task 3.16 adds a `state.expired` flag to this same call (D29(c)) --
-      // updated here rather than left to silently start failing, since this
-      // is a real behavioural change to the interceptor's own call shape,
-      // not a rename.
-      expect(navigateSpy).toHaveBeenCalledWith('/login', { state: { expired: true } })
+      // Task 3.16 adds a `state.expired` flag to this same call (D29(c));
+      // task 10.21 (Note B, approved) adds `state.from` -- updated here
+      // rather than left to silently start failing, since both are real
+      // behavioural changes to the interceptor's own call shape, not a
+      // rename.
+      expect(navigateSpy).toHaveBeenCalledWith('/login', { state: { expired: true, from: '/inicio' } })
+
+      useSessionStore.getState().clearToken()
+    })
+
+    // owner-session spec's "The attempted path survives the round trip",
+    // Note B (approved 10.1(b)): 10.20 [RED] / 10.21 [GREEN]. A 401 fired
+    // while she is on a guarded path now carries BOTH fields --
+    // `state.expired` unchanged (3.15/3.16) and `state.from` set to the
+    // path she was actually on. Read from the router's own current
+    // location, never `window.location` (D29's own binding constraint) --
+    // moved there with a real (unmocked) `router.navigate` first, then the
+    // spy is installed only for the call this test actually asserts on.
+    it('carries both expired and the current path on a 401 fired from a guarded path', async () => {
+      server.use(
+        http.get('http://localhost:8000/reservations', () =>
+          HttpResponse.json({ detail: 'Invalid or expired token', code: null }, { status: 401 }),
+        ),
+      )
+      const { router } = await import('../../routes')
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().setToken('a-valid-looking-token')
+      await router.navigate('/reserva/42')
+
+      const navigateSpy = vi.spyOn(router, 'navigate').mockImplementation(() => Promise.resolve())
+
+      const { apiRequest } = await import('./client')
+      await expect(apiRequest('/reservations')).rejects.toEqual({ status: 401, code: null })
+
+      expect(navigateSpy).toHaveBeenCalledWith('/login', { state: { expired: true, from: '/reserva/42' } })
 
       useSessionStore.getState().clearToken()
     })
@@ -231,7 +267,19 @@ describe('apiRequest', () => {
       )
       const { router } = await import('../../routes')
       const { useSessionStore } = await import('../session/store')
+      // A known starting location, NOT /login -- this file's own tests
+      // share one `router` singleton (no `vi.resetModules()` between every
+      // `it()`), and the previous test in this describe block leaves it
+      // sitting AT /login after its own real 401 redirect. Task 10.11's
+      // new guard (owner-session spec's "An Authenticated Visitor Is Not
+      // Shown The Sign-In Screen") means mounting `/login` while already
+      // authenticated now redirects to /inicio BEFORE the 401 below ever
+      // fires -- exactly correct behaviour, but not what this test means
+      // to exercise, which is the INTERCEPTOR's own redirect, not this
+      // one. An unmatched path (the catch-all, no fetches of its own,
+      // unlike a real authenticated screen) sidesteps that cleanly.
       useSessionStore.getState().setToken('a-valid-looking-token')
+      await router.navigate('/un-lugar-neutral-para-este-test')
 
       render(<RouterProvider router={router} />)
 

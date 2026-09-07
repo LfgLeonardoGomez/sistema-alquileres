@@ -1,6 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createBrowserRouter, Outlet, type RouteObject } from 'react-router'
 import { queryClient } from './shared/mutation/queryClient'
+import { RequireSession } from './app/session/RequireSession'
 import { ROUTING_COPY } from './shared/copy/routing'
 
 // design D31 + the Phase 2 addendum (gap 1). React Router v7, declarative,
@@ -89,14 +90,16 @@ const publicRoutes: RouteObject[] = [
 // `lazy()` treatment for the same reason; the three placeholders don't, but
 // are lazy-loaded anyway for consistency with every other route in this
 // file.
-const appRoutes: RouteObject[] = [
-  {
-    path: '/login',
-    lazy: async () => {
-      const { LoginScreen } = await import('./app/session/LoginScreen')
-      return { Component: LoginScreen }
-    },
-  },
+// owner-session spec's "An Unauthenticated Visitor Never Renders An
+// Authenticated Screen". 10.1(a), Note A (approved): everything below
+// `/login` is wrapped in ONE pathless `RequireSession` parent -- the same
+// pathless shape `RootLayout` above already uses, one level deeper.
+// `RequireSession` is imported eagerly, not `lazy()`: it must decide
+// before any of its children's own `lazy()` chunks are even requested, and
+// it is small enough that lazy-loading it would only delay the guard
+// itself. `/login` sits OUTSIDE it -- guarding the sign-in screen would be
+// its own bug, not a stricter guard.
+const authenticatedRoutes: RouteObject[] = [
   {
     path: '/inicio',
     lazy: async () => {
@@ -176,6 +179,20 @@ const appRoutes: RouteObject[] = [
       const { EditReservation } = await import('./app/reservations/edit/EditReservation')
       return { Component: EditReservation }
     },
+  },
+]
+
+const appRoutes: RouteObject[] = [
+  {
+    path: '/login',
+    lazy: async () => {
+      const { LoginScreen } = await import('./app/session/LoginScreen')
+      return { Component: LoginScreen }
+    },
+  },
+  {
+    Component: RequireSession,
+    children: authenticatedRoutes,
   },
 ]
 

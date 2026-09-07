@@ -67,7 +67,19 @@ async function issueRequest(path: string, init?: RequestInit): Promise<{ status:
     // `LoginScreen` can tell "she was just redirected here by an expired
     // token" apart from "she opened /login directly" and show the approved
     // copy only in the first case.
-    router.navigate('/login', { state: { expired: true } })
+    //
+    // 10.1(b)/Note B (approved): extended with `state.from`, the attempted
+    // path she was actually on -- read from the ROUTER's own current
+    // location (`router.state.location`), never `window.location`, which
+    // would break D29's own binding "the redirect must not reload the
+    // app" constraint for an unrelated reason (a `window.location` read is
+    // as forbidden here as a `window.location` assignment would be, since
+    // this module's whole discipline is "the router is the one source of
+    // truth for where she is"). `RequireSession` (10.19) writes the exact
+    // same field from the exact same source (its own `useLocation()`), so
+    // the two never disagree on the shape.
+    const { pathname, search } = router.state.location
+    router.navigate('/login', { state: { expired: true, from: pathname + search } })
     throw normalise(response.status, await parseJsonBody(response))
   }
 
