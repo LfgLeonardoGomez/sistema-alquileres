@@ -1,0 +1,109 @@
+import { useState } from 'react'
+import { availabilitySummary, HOME_COPY } from '../../shared/copy/home'
+import { parsePlainDate, type PlainDate } from '../../shared/date/parsePlainDate'
+import { Card, fieldLabelClass } from '../../shared/ui'
+import { useAvailabilitySearch } from './useAvailabilitySearch'
+
+// Not `shared/ui/tokens.ts`'s own `inputClass`: a native `<input
+// type="date">`'s browser-drawn control (icon + `dd/mm/aaaa`) has its own
+// intrinsic minimum width, and `inputClass`'s `px-[18px]`/`text-[19px]`
+// (sized for a single full-width text field, screens 01/05/09) left the
+// second of two SIDE-BY-SIDE inputs clipped off the right edge of a 402px
+// canvas -- confirmed empirically (Playwright at 402x874, the "Salida"
+// control's calendar icon fell outside the viewport). Same height/border/
+// radius/focus ring as `inputClass`, tighter padding and text size, and
+// `min-w-0` so the flex-1 column is actually allowed to shrink below the
+// control's own preferred width instead of overflowing its row.
+const dateInputClass =
+  'h-[58px] w-full min-w-0 rounded-field border border-input-border bg-surface px-2.5 text-base text-primary focus:outline-none focus:ring-2 focus:ring-accent-soft-2'
+
+// The owner calls this "imprescindible" and it is her single most frequent
+// action -- placed above `UpcomingArrivals` on Home for that reason (the
+// task brief's own ordering). Two native date inputs, no submit button:
+// results update the moment both fields hold a value, matching "nos diga
+// qué casas tienen estas fechas disponibles" as directly as the UI can --
+// she should not need a second tap to get the answer.
+//
+// A native `<input type="date">`'s own `.value` is already a `YYYY-MM-DD`
+// string or `''` -- there is no `Date` object anywhere on this path (D26).
+function parseInputDate(value: string): PlainDate | null {
+  if (value === '') return null
+  try {
+    return parsePlainDate(value)
+  } catch {
+    // An input mid-typing (e.g. a browser that allows a partial value)
+    // reads as "not yet a date" rather than throwing through render.
+    return null
+  }
+}
+
+export function AvailabilitySearch() {
+  const [checkIn, setCheckIn] = useState<PlainDate | null>(null)
+  const [checkOut, setCheckOut] = useState<PlainDate | null>(null)
+  const result = useAvailabilitySearch(checkIn, checkOut)
+
+  return (
+    <Card className="flex flex-col gap-2.5">
+      <h2 className="text-[17px] font-bold text-muted">{HOME_COPY.availabilityTitle}</h2>
+      <div className="flex gap-2.5">
+        <label className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className={fieldLabelClass}>{HOME_COPY.availabilityEntradaLabel}</span>
+          <input
+            type="date"
+            className={dateInputClass}
+            value={checkIn ?? ''}
+            onChange={(event) => setCheckIn(parseInputDate(event.target.value))}
+          />
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className={fieldLabelClass}>{HOME_COPY.availabilitySalidaLabel}</span>
+          <input
+            type="date"
+            className={dateInputClass}
+            value={checkOut ?? ''}
+            onChange={(event) => setCheckOut(parseInputDate(event.target.value))}
+          />
+        </label>
+      </div>
+
+      {result.kind === 'idle' ? <p className="text-base text-faint">{HOME_COPY.availabilityHint}</p> : null}
+
+      {/* Task brief: "Invalid input ... must say so in the app's register,
+          not silently return 'everything free'." A real alert, not a
+          disabled control someone could route around. */}
+      {result.kind === 'invalid-range' ? (
+        <p role="alert" className="text-base font-bold text-warm">
+          {HOME_COPY.availabilityInvalidRange}
+        </p>
+      ) : null}
+
+      {result.kind === 'loading' ? <p className="text-base text-faint">{HOME_COPY.availabilityLoading}</p> : null}
+
+      {result.kind === 'ready' ? (
+        <>
+          <p className="text-base font-bold text-secondary">
+            {availabilitySummary(result.rows.filter((row) => row.isFree).length, result.rows.length)}
+          </p>
+          {/* Every cabin the tenant has, not only the free ones -- the task
+              brief's own requirement ("Casa Azul is free, Casa Dos Aguas is
+              not", never a silently-omitted row). No money field anywhere in
+              this list (home-summary spec "No Revenue Figure Is Ever
+              Rendered"): `AvailabilityRow` structurally carries none. */}
+          <ul className="flex flex-col">
+            {result.rows.map((row, index) => (
+              <li
+                key={row.cabinId}
+                className={`flex items-center justify-between ${index > 0 ? 'mt-1.5 border-t border-divider pt-1.5' : ''}`}
+              >
+                <span className="text-base font-bold text-primary">{row.cabinName}</span>
+                <span className={`text-base font-extrabold ${row.isFree ? 'text-green-ink' : 'text-warm'}`}>
+                  {row.isFree ? HOME_COPY.availabilityFree : HOME_COPY.availabilityOccupied}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </Card>
+  )
+}

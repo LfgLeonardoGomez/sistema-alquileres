@@ -1,32 +1,28 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Temporal } from 'temporal-polyfill'
-import { apiRequest } from '../api/client'
-import { monthWindow, type YearMonth } from '../../shared/calendar/monthGrid'
+import type { YearMonth } from '../../shared/calendar/monthGrid'
 import { HOME_COPY, MONTH_LABELS } from '../../shared/copy/home'
 import { todayAR } from '../../shared/date/todayAR'
 import { TabBar } from '../shell/TabBar'
 import { SignOutButton } from '../session/SignOutButton'
+import { AvailabilitySearch } from './AvailabilitySearch'
+import { UpcomingArrivals } from './UpcomingArrivals'
 
-// home-summary spec: screen 02, "deliberately empty" -- one occupancy card,
-// one always-reachable action, nothing else (tasks 3.17-3.22).
+// home-summary spec: screen 02. The original "deliberately empty" occupancy
+// card was replaced by the owner's own live-review decision (2026-09-07)
+// with a "Próximas llegadas" card, one row per cabin -- see
+// `UpcomingArrivals.tsx`'s own header for the full replacement rule. This
+// screen still renders no revenue figure (home-summary spec "No Revenue
+// Figure Is Ever Rendered") -- not merely by discipline: neither
+// `UpcomingArrivals` nor `useUpcomingArrivals` carries a money field
+// anywhere in their own types, the same structural-absence shape this
+// screen's old `DashboardOccupancy` type used to enforce.
 //
-// `GET /dashboard/summary` (back/app/schemas/dashboard.py) returns
-// `collected` in the SAME response used for occupancy. This screen must
-// not render it (home-summary spec "No Revenue Figure Is Ever Rendered")
-// -- enforced the same way D32 keeps `detail` off `ApiError`: the type
-// below has no `collected` field, so there is no code path that could read
-// it, structurally, not by discipline.
-type DashboardOccupancy = {
-  readonly occupied_nights: number
-  readonly available_nights: number
-}
-
-// The AR-time month, never the browser's local/UTC one (design D26,
-// tasks 3.19/3.20). `todayAR()` is the app's single source of "today";
-// `monthWindow` (already built for the public calendar, `shared/calendar/`)
-// derives the same `[first_of_month, first_of_next_month)` half-open window
-// the backend's own `month_window()` computes.
+// The AR-time month label above the greeting is unaffected by that
+// replacement and still stands (home-summary spec "The Displayed Month
+// Label Reflects The Argentina-Time Month", design D26): `todayAR()` is the
+// app's single source of "today", read fresh at render rather than stored
+// in state (D30's own reasoning against mirroring anything derivable).
 function currentYearMonth(): YearMonth {
   const today = Temporal.PlainDate.from(todayAR())
   return { year: today.year, month: today.month }
@@ -41,59 +37,45 @@ function monthLabelFor(month: number): string {
 }
 
 export function HomeScreen() {
-  const [occupancy, setOccupancy] = useState<DashboardOccupancy | null>(null)
-
-  // Derived at render, not stored in state -- `todayAR()` is cheap and pure,
-  // and re-deriving it avoids a second, possibly-stale source of "which
-  // month is this" (the same reasoning D30 gives against mirroring anything
-  // derivable).
-  const yearMonth = currentYearMonth()
-  const { start, end } = monthWindow(yearMonth)
-  const monthLabel = monthLabelFor(yearMonth.month)
-
-  useEffect(() => {
-    let cancelled = false
-    apiRequest<DashboardOccupancy>(`/dashboard/summary?from=${start}&to=${end}`)
-      .then((response) => {
-        if (!cancelled) setOccupancy(response)
-      })
-      .catch(() => {
-        // No error copy is spec'd for this screen -- the card simply stays
-        // at its zero state, and the one action ("Anotar una reserva")
-        // remains reachable regardless (3.21/3.22's own unconditional
-        // requirement covers this case too).
-        if (!cancelled) setOccupancy(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [start, end])
-
-  const occupiedNights = occupancy?.occupied_nights ?? 0
-  const totalNights = occupancy !== null ? occupancy.occupied_nights + occupancy.available_nights : 0
+  const monthLabel = monthLabelFor(currentYearMonth().month)
 
   return (
-    <div>
-      <p>{monthLabel}</p>
-      <h1>{HOME_COPY.greeting}</h1>
-      <section aria-label={HOME_COPY.occupiedNightsTitle}>
-        <h2>{HOME_COPY.occupiedNightsTitle}</h2>
-        <p>
-          {occupiedNights} {HOME_COPY.of} {totalNights}
-        </p>
-      </section>
-      {/* home-summary spec "'Anotar Una Reserva' Is Always Reachable In One
-          Tap" -- unconditional, never behind an empty-state branch. The
-          wizard itself (Phase 5) does not exist yet; this is the same kind
-          of forward reference `routes.tsx` already carries for other
-          not-yet-built screens (D31's routing table). */}
-      <Link to="/reserva/nueva/1">{HOME_COPY.addReservation}</Link>
-      {/* owner-session spec's "The Owner Can Sign Out From Inside The App",
-          Note C(i) (approved 10.1(f)): a low-emphasis affordance owned by
-          `app/session/`, composed here -- after "Anotar una reserva",
-          above the tab bar -- rather than as a fifth tab. `TabBar.tsx`
-          itself is untouched by this or any task in this phase. */}
-      <SignOutButton />
+    <div className="flex min-h-screen flex-col bg-page">
+      {/* `gap-4` (not this screen's own former `gap-[22px]`) -- matches
+          `GuestDirectory.tsx`'s own established outer-gap convention rather
+          than inventing a new spacing value, and keeps two stacked cards'
+          worth of content plus "Anotar una reserva" above `TabBar.tsx`'s
+          own sticky footer on a 402x874 canvas (measured empirically:
+          without this, the button's bottom edge sits under the tab bar). */}
+      <div className="flex flex-1 flex-col gap-4 px-[22px] pt-16 pb-6">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-[17px] font-bold text-faint">{monthLabel}</p>
+          <h1 className="text-[30px] font-extrabold tracking-tight text-primary">{HOME_COPY.greeting}</h1>
+        </div>
+        {/* Owner's own framing (2026-09-07): "es lo que más me preguntan"
+            -- her most frequent action, placed above "Próximas llegadas"
+            (the less frequent one) per the task brief's own ordering. */}
+        <AvailabilitySearch />
+        <UpcomingArrivals />
+        <div className="flex-1" />
+        {/* home-summary spec "'Anotar Una Reserva' Is Always Reachable In One
+            Tap" -- unconditional, never behind an empty-state branch. The
+            wizard itself (Phase 5) does not exist yet; this is the same kind
+            of forward reference `routes.tsx` already carries for other
+            not-yet-built screens (D31's routing table). */}
+        <Link
+          to="/reserva/nueva/1"
+          className="flex h-[68px] items-center justify-center rounded-btn bg-accent text-[21px] font-extrabold text-white"
+        >
+          {HOME_COPY.addReservation}
+        </Link>
+        {/* owner-session spec's "The Owner Can Sign Out From Inside The App",
+            Note C(i) (approved 10.1(f)): a low-emphasis affordance owned by
+            `app/session/`, composed here -- after "Anotar una reserva",
+            above the tab bar -- rather than as a fifth tab. `TabBar.tsx`
+            itself is untouched by this or any task in this phase. */}
+        <SignOutButton />
+      </div>
       {/* Handoff screen 02: "Sticky bottom tab bar (4 items: Inicio ·
           Calendario · Huéspedes · Cabañas)" -- every authenticated screen
           composes the same shared `TabBar` (task 3.23). */}
