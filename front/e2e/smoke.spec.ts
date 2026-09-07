@@ -46,25 +46,15 @@ import { expect, request, test } from '@playwright/test'
 // `scripts/seed.py`'s `ON CONFLICT DO NOTHING` uses, adapted to an endpoint
 // that has no such conflict to begin with (a fresh UUID tenant every call).
 //
-// --- A real defect this test's own construction surfaced -------------
+// --- Phase 10 closed the client-side auth-guard gap ------------------
 //
-// `LoginScreen.tsx` calls `setToken()` on a successful login and never
-// navigates anywhere; no route in `routes.tsx` reads `isAuthenticated`
-// either (confirmed by `grep -rn "isAuthenticated" src` outside
-// `store.ts` returning zero hits) -- so there is currently NO client-side
-// redirect from a successful login to `/inicio`, and NO client-side guard
-// on any authenticated route: `/inicio`, `/reserva/nueva/1`, etc. are all
-// reachable by URL with no session at all (the DATA behind them is still
-// safe -- every fetch still requires a bearer the browser doesn't have,
-// so an unauthenticated visitor sees an empty/broken screen, not another
-// tenant's reservations -- but the UI shell itself renders regardless).
-// This is Auth domain (CRITICAL governance level per this project's
-// standing rules) -- NOT fixed here. The workaround below
-// (`page.goto('/inicio')` immediately after confirming the login response
-// succeeded, rather than waiting on an in-app redirect that does not
-// exist) keeps this test running today without silently papering over a
-// gap the owner should decide on. See this change's closeout notes for
-// the full writeup.
+// This test used to drive `page.goto('/inicio')` by hand after login,
+// because `LoginScreen.tsx` had no in-app redirect on success. Phase 10
+// (`owner-session`, tasks 10.7-10.11) built that redirect -- a successful
+// sign-in now calls `navigate(resolveReturnPath(location.state), {
+// replace: true })`, landing on `/inicio` for a plain login with no
+// recorded origin. Task 10.23 removed the workaround below in favour of
+// waiting on that real redirect.
 const API_BASE_URL = process.env.PLAYWRIGHT_API_BASE_URL ?? 'http://localhost:8000'
 const REGISTRATION_TOKEN = process.env.PLAYWRIGHT_REGISTRATION_TOKEN
 if (REGISTRATION_TOKEN === undefined || REGISTRATION_TOKEN === '') {
@@ -152,12 +142,10 @@ test('login, record a stay, record a payment, see the balance', async ({ page })
   const login = await loginResponse
   expect(login.ok()).toBe(true)
 
-  // See this file's top comment: no in-app redirect exists yet after a
-  // successful login, so this test drives the navigation itself. The
-  // token is already in `localStorage` by the time the response above
-  // resolves (`LoginScreen`'s `setToken` call is synchronous with it), so
-  // a fresh navigation to `/inicio` loads already authenticated.
-  await page.goto('/inicio')
+  // Task 10.23: wait on the real post-login redirect (10.8-10.11) instead
+  // of driving the navigation by hand. `toHaveURL` polls, the same as
+  // every other in-app navigation assertion in this file below.
+  await expect(page).toHaveURL(/\/inicio$/)
   await expect(page.getByRole('link', { name: 'Anotar una reserva' })).toBeVisible()
 
   // --- Record a stay (the four-step wizard) -----------------------------
