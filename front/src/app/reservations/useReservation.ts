@@ -28,7 +28,7 @@ export type ReservationDetail = {
   readonly balanceCentavos: number
 }
 
-type ApiReservation = {
+export type ApiReservation = {
   readonly id: string
   readonly property_id: string
   readonly client_id: string
@@ -42,7 +42,13 @@ type ApiReservation = {
   readonly balance: string
 }
 
-function decodeReservationDetail(raw: ApiReservation): ReservationDetail {
+// Exported (task 7.7/7.8) so `useReservations.ts` -- the guest directory's
+// own all-reservations list, D30's "reservation list" the `guest-directory`
+// spec computes per-guest aggregates from -- decodes through this exact
+// function rather than a third hand-written copy of the same
+// `Decimal`-as-string/date-branding boundary `useReservationsForCabin.ts`
+// already has one of.
+export function decodeReservationDetail(raw: ApiReservation): ReservationDetail {
   return {
     id: raw.id,
     propertyId: raw.property_id,

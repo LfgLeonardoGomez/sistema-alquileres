@@ -111,11 +111,16 @@ const appRoutes: RouteObject[] = [
       return { Component: CalendarScreen }
     },
   },
+  // Phase 7, `guest-directory`. Screen 09/10. Replaces the placeholder --
+  // `GuestsPlaceholder` itself stays, still exercised by `TabBar.test.tsx`
+  // directly (the same precedent `/calendario`'s own now-unused
+  // `CalendarPlaceholder` set at task 4.14: never deleted, kept alive by
+  // that one test file's own router fixture).
   {
     path: '/huespedes',
     lazy: async () => {
-      const { GuestsPlaceholder } = await import('./app/shell/PlaceholderScreens')
-      return { Component: GuestsPlaceholder }
+      const { GuestDirectory } = await import('./app/guests/GuestDirectory')
+      return { Component: GuestDirectory }
     },
   },
   {

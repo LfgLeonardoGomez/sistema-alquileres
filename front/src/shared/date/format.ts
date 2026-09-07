@@ -43,6 +43,15 @@ export function formatDayMonth(date: PlainDate): string {
   return `${day}/${month}`
 }
 
+/** task 7.9/7.10: the guest sheet's overflow line names a MONTH, not a
+ * date -- "y 1 estadía más en febrero". Reuses this module's own
+ * `SPANISH_MONTHS` rather than a fourth hand-written month-name array
+ * (`home.ts` and `public.ts` each already have one, for their own,
+ * differently-cased screens). */
+export function monthNameFor(date: PlainDate): string {
+  return monthName(splitPlainDate(date).month)
+}
+
 /**
  * Renders `[checkIn, checkOut)` as `"D al D de <mes>"`.
  *

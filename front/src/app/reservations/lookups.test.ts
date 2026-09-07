@@ -21,7 +21,19 @@ import { server } from '../../test/setup'
 // naming the path, not a bare string occurrence -- otherwise `schema.gen.ts`'s
 // own `"/properties"`/`"/clients"` OpenAPI path keys (type-level
 // documentation, never a runtime call) would false-positive the scan.
-const LOOKUP_CALL_SITE = /apiRequest(?:<[^>]*>)?\(\s*[`'"][^`'"]*\/(?:properties|clients)\b/
+//
+// **Corrected at task 7.14, the exact same shape as 1.22's glossary fix:**
+// the boundary used to be `\b`, which matches immediately after
+// "properties"/"clients" -- including right before a `/`, so
+// `apiRequest(\`/clients/${guestId}\`, { method: 'DELETE' })`
+// (`useDeactivateGuest.ts`, a write to ONE guest by id, never a lookup
+// list) false-positived as a second lookup call site. The rule this guard
+// exists to enforce is about the LIST fetch specifically (D30: "one hook
+// each... fetching with include_inactive=true"), not about every request
+// whose path happens to start with the same resource name. The lookahead
+// below requires the path to END right there (a query string or the
+// closing quote) -- a nested `/id` segment no longer matches.
+const LOOKUP_CALL_SITE = /apiRequest(?:<[^>]*>)?\(\s*[`'"][^`'"]*\/(?:properties|clients)(?=[?'"`])/
 
 const ALLOWED_LOOKUP_MODULES = ['./useCabins.ts', './useClients.ts']
 
@@ -132,5 +144,12 @@ describe('lookup call-site guard', () => {
     expect(LOOKUP_CALL_SITE.test("apiRequest('/properties?include_inactive=true')")).toBe(true)
     expect(LOOKUP_CALL_SITE.test('apiRequest<Client[]>(`/clients?include_inactive=true`)')).toBe(true)
     expect(LOOKUP_CALL_SITE.test('"/properties": { get: operations["list_properties"] }')).toBe(false)
+  })
+
+  // task 7.14's own correction, proved rather than merely stated: a write
+  // to ONE resource by id (never the list) must NOT match, even though its
+  // path starts with the same resource name the lookup hooks use.
+  it('the regex does not flag a by-id write to /clients/{id} as a lookup call site', () => {
+    expect(LOOKUP_CALL_SITE.test("apiRequest<void>(`/clients/${guestId}`, { method: 'DELETE' })")).toBe(false)
   })
 })

@@ -1,7 +1,6 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiRequestWithStatus } from '../api/client'
 import { keys } from '../api/queries/keys'
-import { queryClient } from '../../shared/mutation/queryClient'
 import type { ApiError } from '../../shared/errors/ApiError'
 import type { Client } from '../reservations/useClients'
 
@@ -10,9 +9,20 @@ import type { Client } from '../reservations/useClients'
 // existing phone -- and it deliberately does NOT overwrite the stored
 // name." The same sheet is meant to be reused by slice 7 (D33's own
 // closing line); this hook is the reusable half -- the API call and the
-// 200-vs-201 decode -- so `GuestStep.tsx` (this slice) and a future guest
-// directory screen (slice 7, out of this run's scope) share one call site
+// 200-vs-201 decode -- so `GuestStep.tsx` (this slice) and the guest
+// directory's own add-guest sheet (task 7.3/7.4) share one call site
 // rather than two independent implementations of the same branch.
+//
+// **Closed at task 7.3, the OPEN TECHNICAL ITEM 6.12's own comment
+// flagged**: this hook used to invalidate the imported `queryClient`
+// singleton directly. Correct in production (`routes.tsx`'s `RootLayout`
+// provides that same singleton) but, per `useReservationMutation.ts`'s own
+// recorded reasoning, "only the hook is guaranteed to invalidate the
+// client the surrounding tree is ACTUALLY reading from" -- which is what
+// makes the reactivation half of `GuestDirectory.test.tsx`'s add-guest
+// test observable at all. Without this, `GuestDirectory`'s freshly built
+// `QueryClient` never learns the deactivated guest was reactivated, and the
+// row keeps reading "Desactivado" after a successful `POST /clients`.
 
 export type FindOrCreateGuestInput = {
   readonly fullName: string
@@ -40,6 +50,8 @@ type ClientApiResponse = {
 }
 
 export function useFindOrCreateGuest() {
+  const queryClient = useQueryClient()
+
   return useMutation<FindOrCreateGuestResult, ApiError, FindOrCreateGuestInput>({
     mutationFn: async ({ fullName, phone }: FindOrCreateGuestInput): Promise<FindOrCreateGuestResult> => {
       const { data, status } = await apiRequestWithStatus<ClientApiResponse>('/clients', {
