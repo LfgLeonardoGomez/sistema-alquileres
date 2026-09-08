@@ -10,6 +10,8 @@ export {
   fieldLabelClass,
   inputClass,
   navButtonClass,
+  pillButtonClass,
+  pillRowClass,
   segmentedButtonClass,
   segmentedTrackClass,
   weekdayHeaderClass,

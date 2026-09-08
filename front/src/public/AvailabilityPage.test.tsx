@@ -6,7 +6,7 @@ import type { ComponentType } from 'react'
 import { Temporal } from 'temporal-polyfill'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { server } from '../test/setup'
-import { PUBLIC_COPY } from '../shared/copy/public'
+import { cabinPhotoLabel, PUBLIC_COPY } from '../shared/copy/public'
 
 // Renders a component the way `routes.tsx` (task 2.32) actually mounts
 // `AvailabilityPage` in production: via a router, with the slug carried by
@@ -308,5 +308,176 @@ describe('AvailabilityPage', () => {
     await screen.findByRole('group', { name: PUBLIC_COPY.filterLabel })
     expect(screen.queryByRole('link', { name: PUBLIC_COPY.whatsappButton })).not.toBeInTheDocument()
     expect(screen.queryByText(PUBLIC_COPY.whatsappButton)).not.toBeInTheDocument()
+  })
+
+  it('mobile (no matchMedia): renders only the primary month, never a second desktop panel', async () => {
+    server.use(availabilityHandler(), contactHandler({}))
+
+    const { AvailabilityPage } = await import('./AvailabilityPage')
+    renderAtSlug(AvailabilityPage, 'mar-del-tuyu-cabins')
+
+    await screen.findByTestId('day-2026-09-10')
+    // October cannot appear from September's own grid (`getMonthGrid` only
+    // emits cells for the target month) -- its presence would mean a
+    // second, October, `PublicMonthCalendar` mounted alongside this one.
+    expect(screen.queryByTestId('day-2026-10-01')).not.toBeInTheDocument()
+  })
+
+  // [TRAP] the same defect class as `HOME_COPY.greeting`'s hardcoded "Hola,
+  // Ana": the old "Las casas" tiles named one tenant's own cabins
+  // ("Casa Azul", "Dos Aguas") in app copy, so every OTHER tenant's public
+  // page showed cabin names it does not have. The tile labels must be
+  // derived from the tenant's own already-fetched `availability` list, not
+  // baked into copy.
+  it('renders one photo tile per the tenant’s own cabin, never another tenant’s hardcoded names', async () => {
+    server.use(availabilityHandler(), contactHandler({}))
+
+    const { AvailabilityPage } = await import('./AvailabilityPage')
+    renderAtSlug(AvailabilityPage, 'mar-del-tuyu-cabins')
+
+    await screen.findByText(cabinPhotoLabel('Casa Azul'))
+    expect(screen.getByText(cabinPhotoLabel('Dos Aguas'))).toBeInTheDocument()
+    // Exactly two tiles for two cabins -- no third tile invented to fill a
+    // grid column, and no leftover hardcoded label from either fixture.
+    expect(screen.queryByText('foto casa azul · interior')).not.toBeInTheDocument()
+  })
+
+  // The tenant's own cabin count sets the tile count; the grid's `lg:`
+  // column count is a pure CSS decision, unrelated to how many tiles exist.
+  it('renders exactly one tile for a tenant with a single cabin', async () => {
+    server.use(
+      http.get('http://localhost:8000/public/:slug/availability', () =>
+        HttpResponse.json([{ property_id: CASA_AZUL_ID, name: 'Casa Azul', occupied: [] }]),
+      ),
+      contactHandler({}),
+    )
+
+    const { AvailabilityPage } = await import('./AvailabilityPage')
+    renderAtSlug(AvailabilityPage, 'mar-del-tuyu-cabins')
+
+    await screen.findByText(cabinPhotoLabel('Casa Azul'))
+    expect(screen.queryByText(cabinPhotoLabel('Dos Aguas'))).not.toBeInTheDocument()
+  })
+
+  // A tenant with zero cabins must not show a "Las casas" heading above an
+  // empty grid -- that reads as a broken page, not an honest empty state.
+  it('hides the "Las casas" section entirely for a tenant with no cabins', async () => {
+    server.use(
+      http.get('http://localhost:8000/public/:slug/availability', () => HttpResponse.json([])),
+      contactHandler({}),
+    )
+
+    const { AvailabilityPage } = await import('./AvailabilityPage')
+    renderAtSlug(AvailabilityPage, 'mar-del-tuyu-cabins')
+
+    await screen.findByRole('group', { name: PUBLIC_COPY.filterLabel })
+    expect(screen.queryByText(PUBLIC_COPY.housesTitle)).not.toBeInTheDocument()
+  })
+
+  // Screen 12 ("Calendario público · computadora"): the `lg:` breakpoint,
+  // observed the same way `shared/viewport/useIsDesktop.ts` observes it in
+  // production -- `window.matchMedia('(min-width: 1024px)')`. jsdom ships
+  // no `matchMedia` at all, so every test above (none of which stub it)
+  // keeps exercising the exact same mobile behaviour this file already
+  // pinned before this desktop pass -- proven directly by the test just
+  // above.
+  describe('desktop (lg breakpoint)', () => {
+    function mockDesktopViewport(): void {
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn().mockReturnValue({
+          matches: true,
+          media: '(min-width: 1024px)',
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }),
+      )
+    }
+
+    // Occupied nights the mobile fixtures above don't cover, in the SECOND
+    // (October) displayed month -- proves the second panel is hydrated from
+    // the real widened window, not rendered empty/wrong (the exact failure
+    // mode the task brief calls out: "a public page lying about
+    // availability").
+    function desktopAvailabilityHandler(onRequest?: (url: URL) => void) {
+      return http.get('http://localhost:8000/public/:slug/availability', ({ request }) => {
+        const url = new URL(request.url)
+        onRequest?.(url)
+        return HttpResponse.json([
+          {
+            property_id: CASA_AZUL_ID,
+            name: 'Casa Azul',
+            occupied: [
+              { check_in: '2026-09-10', check_out: '2026-09-12' },
+              { check_in: '2026-10-05', check_out: '2026-10-08' },
+            ],
+          },
+          { property_id: DOS_AGUAS_ID, name: 'Dos Aguas', occupied: [] },
+        ])
+      })
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('widens the fetch window to cover both displayed months in one request, and both render correctly', async () => {
+      const requests: URL[] = []
+      mockDesktopViewport()
+      server.use(desktopAvailabilityHandler((url) => requests.push(url)), contactHandler({}))
+
+      const { AvailabilityPage } = await import('./AvailabilityPage')
+      renderAtSlug(AvailabilityPage, 'mar-del-tuyu-cabins')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Casa Azul' }))
+
+      await waitFor(() => expect(requests).toHaveLength(1))
+      expect(requests[0]?.searchParams.get('from')).toBe('2026-09-01')
+      expect(requests[0]?.searchParams.get('to')).toBe('2026-11-01')
+
+      await waitFor(() => expect(screen.getByTestId('day-2026-09-10').dataset.occupied).toBe('true'))
+      expect(screen.getByTestId('day-2026-10-05').dataset.occupied).toBe('true')
+    })
+
+    it('"next" advances the two-month window by one month, and still sends exactly one request', async () => {
+      const requests: URL[] = []
+      mockDesktopViewport()
+      server.use(desktopAvailabilityHandler((url) => requests.push(url)), contactHandler({}))
+
+      const { AvailabilityPage } = await import('./AvailabilityPage')
+      renderAtSlug(AvailabilityPage, 'mar-del-tuyu-cabins')
+
+      await waitFor(() => expect(requests).toHaveLength(1))
+
+      await userEvent.click(screen.getByRole('button', { name: PUBLIC_COPY.nextMonth }))
+
+      await waitFor(() => expect(requests).toHaveLength(2))
+      expect(requests[1]?.searchParams.get('from')).toBe('2026-10-01')
+      expect(requests[1]?.searchParams.get('to')).toBe('2026-12-01')
+    })
+
+    it('renders exactly one filter control (pills, not the segmented control too)', async () => {
+      mockDesktopViewport()
+      server.use(availabilityHandler(), contactHandler({}))
+
+      const { AvailabilityPage } = await import('./AvailabilityPage')
+      renderAtSlug(AvailabilityPage, 'mar-del-tuyu-cabins')
+
+      await screen.findByRole('group', { name: PUBLIC_COPY.filterLabel })
+      expect(screen.getAllByRole('group', { name: PUBLIC_COPY.filterLabel })).toHaveLength(1)
+      expect(screen.getAllByRole('button', { name: 'Casa Azul' })).toHaveLength(1)
+    })
+
+    it('renders the WhatsApp link exactly once (top-right variant, not the pinned-bottom one too)', async () => {
+      mockDesktopViewport()
+      server.use(availabilityHandler(), contactHandler({ 'mar-del-tuyu-cabins': '5491122334455' }))
+
+      const { AvailabilityPage } = await import('./AvailabilityPage')
+      renderAtSlug(AvailabilityPage, 'mar-del-tuyu-cabins')
+
+      const link = await screen.findByRole('link', { name: PUBLIC_COPY.whatsappButton })
+      expect(link).toHaveAttribute('href', 'https://wa.me/5491122334455')
+      expect(screen.getAllByRole('link', { name: PUBLIC_COPY.whatsappButton })).toHaveLength(1)
+    })
   })
 })

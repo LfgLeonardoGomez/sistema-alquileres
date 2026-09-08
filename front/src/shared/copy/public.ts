@@ -45,14 +45,23 @@ export const PUBLIC_COPY = {
   legendOccupied: 'Ocupado',
   whatsappButton: 'Escribinos por WhatsApp',
   loading: 'Cargando disponibilidad…',
-  // Screen 11/12's own two photo-placeholder labels, lifted verbatim during
-  // the frontend-visual-design pass -- the tiles themselves stay striped
-  // placeholders per the handoff's one documented fidelity exception (no
-  // photo asset ships with this change).
+  // Screen 11/12's own "Las casas" section heading. The tiles below it are
+  // no longer named by fixed copy keys -- see `cabinPhotoLabel` below.
   housesTitle: 'Las casas',
-  photoCasaAzul: 'foto casa azul',
-  photoDosAguas: 'foto dos aguas',
   // Design D32's own drafted line (shared/copy/errors.ts) reads correctly
   // here too -- no public-page-specific override is needed for this run's
   // scope, so no separate sentence is invented.
 } as const
+
+/**
+ * One photo tile's label per the tenant's own cabin. Generalises the
+ * handoff's two literal labels ("foto casa azul", "foto dos aguas" -- one
+ * tenant's own cabin names, frozen into copy) into a template every
+ * tenant's own cabin list can share: this function has no idea which
+ * tenant's `name` it was called with, or how many cabins that tenant has.
+ * The tiles themselves stay striped placeholders per the handoff's one
+ * documented fidelity exception (no photo asset ships with this change).
+ */
+export function cabinPhotoLabel(cabinName: string): string {
+  return `foto ${cabinName.toLowerCase()}`
+}

@@ -14,6 +14,20 @@ export function segmentedButtonClass(active: boolean, height = 'h-12'): string {
     : `flex ${height} flex-1 items-center justify-center rounded-xl text-[17px] font-bold text-muted-2`
 }
 
+// Screen 12's own desktop filter recipe -- the handoff's "segmented on
+// phone, pills on desktop" (README: screens 11/12). A free-standing pair
+// rather than a variant of `segmentedTrackClass`/`segmentedButtonClass`
+// above: the desktop pill has no shared track background (each pill is its
+// own rounded-full chip), so reusing the segmented recipe would need more
+// conditional branches than writing its own small recipe.
+export const pillRowClass = 'flex flex-wrap gap-2.5'
+
+export function pillButtonClass(active: boolean): string {
+  return active
+    ? 'flex h-11 items-center rounded-pill bg-primary px-[22px] text-base font-bold text-white'
+    : 'flex h-11 items-center rounded-pill bg-track-2 px-[22px] text-base font-bold text-secondary'
+}
+
 export const navButtonClass =
   'flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#E9E9F2] bg-surface text-xl text-muted'
 
