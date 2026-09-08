@@ -1,31 +1,35 @@
-# Deploy runbook — Railway (API + Postgres) + Vercel (frontend)
+# Runbook de deploy — Railway (API + Postgres) + Vercel (frontend)
 
-First deploy: 2026-09-08. Follow the steps in order — the ordering is not
-cosmetic, see "Why this order" below.
+Primer deploy: 2026-09-08. Seguir los pasos en orden — el orden no es
+cosmético, ver "Por qué este orden" más abajo.
 
-## Why this order
+## Por qué este orden
 
-Two values can only be known after the other side exists:
+Hay dos valores que sólo se pueden conocer después de que exista el otro
+lado:
 
-- The **frontend build** needs `VITE_API_BASE_URL`. Vite inlines
-  `import.meta.env` **at build time**, so this cannot be changed later
-  without a rebuild. The Railway API must exist first.
-- The **API** needs `CORS_ALLOWED_ORIGINS` set to the Vercel origin, which
-  does not exist until the frontend is deployed.
+- El **build del frontend** necesita `VITE_API_BASE_URL`. Vite inlinea
+  `import.meta.env` **en tiempo de build**, así que esto no se puede
+  cambiar después sin reconstruir. La API en Railway tiene que existir
+  primero.
+- La **API** necesita `CORS_ALLOWED_ORIGINS` apuntando al origen de
+  Vercel, que no existe hasta que el frontend esté deployado.
 
-So: Railway API (without CORS) → Vercel → back to Railway to set CORS.
+Entonces: API en Railway (sin CORS) → Vercel → volver a Railway a
+configurar el CORS.
 
 ---
 
 ## 1. Railway — Postgres
 
-Create a Postgres service. Then run the role runbook **once**, as the
-superuser Railway gives you, from its SQL console or `psql`:
+Crear un servicio de Postgres. Después ejecutar el runbook de roles **una
+sola vez**, con el superusuario que da Railway, desde su consola SQL o
+`psql`:
 
 ```sql
-CREATE ROLE alquileres_migrator WITH LOGIN PASSWORD '<pick one>';
+CREATE ROLE alquileres_migrator WITH LOGIN PASSWORD '<elegir una>';
 
-CREATE ROLE alquileres_app WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '<pick another>';
+CREATE ROLE alquileres_app WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '<elegir otra>';
 
 GRANT CREATE, USAGE ON SCHEMA public TO alquileres_migrator;
 GRANT USAGE ON SCHEMA public TO alquileres_app;
@@ -33,140 +37,149 @@ GRANT USAGE ON SCHEMA public TO alquileres_app;
 GRANT CREATE ON DATABASE railway TO alquileres_migrator;
 ```
 
-Replace `railway` with the actual database name if it differs.
+Reemplazar `railway` por el nombre real de la base si es distinto.
 
-> **`NOSUPERUSER NOBYPASSRLS` on `alquileres_app` is the line that must not
-> be simplified away.** RLS is bypassed by superusers, `BYPASSRLS` roles,
-> and the table owner. Drop either keyword and the app role stops being
-> isolated by tenant — and **every isolation test in the repo would keep
-> passing**, because they all run as the app role too. If a permission
-> error appears, add the missing grant; never widen the role.
+> **`NOSUPERUSER NOBYPASSRLS` en `alquileres_app` es la línea que no se
+> puede "simplificar".** RLS es evadido por superusuarios, por roles con
+> `BYPASSRLS` y por el dueño de la tabla. Si se saca cualquiera de las dos
+> palabras, el rol de la aplicación deja de estar aislado por tenant — y
+> **todos los tests de aislamiento del repositorio seguirían pasando**,
+> porque también corren con ese mismo rol. Si aparece un error de
+> permisos, agregar el grant que falta; nunca agrandar el rol.
 >
-> This script runs itself on the Compose `db` service via
-> `docker/initdb/01-roles.sh`, which is why it has never had to be done by
-> hand before. A managed Postgres never runs that file. See
+> Este script se ejecuta solo en el servicio `db` de Compose, vía
+> `docker/initdb/01-roles.sh`, y por eso nunca hubo que hacerlo a mano.
+> Un Postgres administrado nunca ejecuta ese archivo. Ver
 > `back/README.md` → "Provisioning a fresh PostgreSQL cluster".
 
-Do **not** use Railway's default connection string for the API. Build two
-of your own from the roles you just made:
+**No** usar la cadena de conexión por defecto de Railway para la API.
+Armar dos propias, con los roles recién creados:
 
 - App: `postgresql+psycopg://alquileres_app:<pw>@<host>:<port>/<db>`
 - Migrator: `postgresql+psycopg://alquileres_migrator:<pw>@<host>:<port>/<db>`
 
-## 2. Railway — migrations
+## 2. Railway — migraciones
 
-Run them from your laptop, pointing at Railway's **public** Postgres URL:
+Ejecutarlas desde la máquina local, apuntando a la URL **pública** del
+Postgres de Railway:
 
 ```bash
 cd back
-MIGRATOR_DATABASE_URL='postgresql+psycopg://alquileres_migrator:<pw>@<public-host>:<port>/<db>' \
+MIGRATOR_DATABASE_URL='postgresql+psycopg://alquileres_migrator:<pw>@<host-publico>:<port>/<db>' \
   alembic upgrade head
 ```
 
-> **Why from the laptop and not a Railway one-off command**: when
-> `ENVIRONMENT=production`, the API **refuses to boot** if
-> `MIGRATOR_DATABASE_URL` is present anywhere in its process environment.
-> A Railway one-off command inherits the service's variables, so putting
-> the migrator URL on the API service to run a migration would stop the
-> API from starting. Keep the two environments separate. A dedicated
-> migrate service (same repo, `alembic upgrade head` as its command, only
-> the migrator URL set) is the tidier long-term answer.
+> **Por qué desde la máquina local y no con un comando one-off de
+> Railway**: cuando `ENVIRONMENT=production`, la API **se niega a
+> arrancar** si `MIGRATOR_DATABASE_URL` está presente en cualquier lugar
+> del environment de su proceso. Un comando one-off de Railway hereda las
+> variables del servicio, así que poner la URL del migrator en el servicio
+> de la API para correr una migración impediría que la API arranque.
+> Mantener los dos entornos separados. Un servicio de migración dedicado
+> (mismo repositorio, `alembic upgrade head` como comando, con únicamente
+> la URL del migrator seteada) es la solución más prolija a largo plazo.
 
-## 3. Railway — the API service
+## 3. Railway — el servicio de la API
 
-Deploy from the GitHub repo. Settings:
+Deployar desde el repositorio de GitHub. Configuración:
 
 - **Root directory**: `back`
-- **Builder**: Dockerfile. No `--target` needed — `prod` is the last stage,
-  so a plain build selects it.
-- **Replicas: 1.** Not a performance setting. See the warning below.
+- **Builder**: Dockerfile. No hace falta `--target` — `prod` es la última
+  etapa, así que un build simple la selecciona.
+- **Réplicas: 1.** No es una configuración de rendimiento. Ver la
+  advertencia más abajo.
 
-Environment variables (all of these have **no default** and the app
-refuses to boot without them — that is deliberate, design D20/D37):
+Variables de entorno (todas estas **no tienen default** y la aplicación se
+niega a arrancar sin ellas — es deliberado, diseño D20/D37):
 
-| Variable | Value |
+| Variable | Valor |
 |---|---|
-| `DATABASE_URL` | the `alquileres_app` connection string from step 1 |
-| `JWT_SECRET` | a fresh random value, **min 32 bytes** |
-| `REGISTRATION_TOKEN` | a fresh random value — gates `POST /auth/register` |
+| `DATABASE_URL` | la cadena de conexión de `alquileres_app` del paso 1 |
+| `JWT_SECRET` | un valor aleatorio nuevo, **mínimo 32 bytes** |
+| `REGISTRATION_TOKEN` | un valor aleatorio nuevo — protege `POST /auth/register` |
 | `ENVIRONMENT` | `production` |
-| `TRUSTED_PROXY_COUNT` | start at `1`, then **verify** — see below |
-| `CORS_ALLOWED_ORIGINS` | leave unset for now; step 5 fills it |
+| `TRUSTED_PROXY_COUNT` | empezar en `1` y después **verificar** — ver abajo |
+| `CORS_ALLOWED_ORIGINS` | dejar sin setear por ahora; el paso 5 lo completa |
 
-Do **not** set `MIGRATOR_DATABASE_URL` here. The app checks the raw
-environment for it and will not start.
+**No** setear `MIGRATOR_DATABASE_URL` acá. La aplicación revisa el
+environment crudo buscándola y no va a arrancar.
 
-> **Never raise the replica count.** `back/Dockerfile` runs
-> `uvicorn --workers 1`, and its own comment explains why: the auth rate
-> limiter's counters are in-process and per-worker, so a second worker or
-> a second replica silently multiplies every login-attempt budget. Railway
-> makes adding replicas a single click. Fixing this properly means moving
-> the limiter to shared storage first.
+> **Nunca aumentar la cantidad de réplicas.** `back/Dockerfile` ejecuta
+> `uvicorn --workers 1`, y su propio comentario explica por qué: los
+> contadores del limitador de intentos de autenticación viven en memoria
+> del proceso y son por worker, así que un segundo worker o una segunda
+> réplica multiplican silenciosamente todos los presupuestos de intentos
+> de login. Railway hace que agregar réplicas sea un solo click.
+> Resolverlo de verdad implica primero mover el limitador a un almacén
+> compartido.
 
-`TRUSTED_PROXY_COUNT` matters for the same limiter: it says how many
-`X-Forwarded-For` entries, counted from the right, were written by
-infrastructure you trust. Too low and callers can spoof their way into
-separate buckets; too high and everyone behind the proxy collapses into
-one shared bucket and gets locked out together.
+`TRUSTED_PROXY_COUNT` importa para el mismo limitador: indica cuántas
+entradas de `X-Forwarded-For`, contadas **desde la derecha**, fueron
+escritas por infraestructura en la que se confía. Si el número es
+demasiado bajo, quien llame puede falsificar su origen y conseguir un
+bucket separado; si es demasiado alto, todos los que están detrás del
+proxy colapsan en un único bucket compartido y quedan bloqueados juntos.
 
-**`1` is an educated starting guess, not a verified value** — it assumes
-Railway's edge appends exactly one entry. Do not leave it unverified:
-the app logs the resolved value once at boot, so check that line, and
-confirm against a real request's actual `X-Forwarded-For` chain. If
-Railway appends two hops, `1` lets a caller spoof the entry the limiter
-reads. Locally the correct value is `0` (no proxy in front of `api`),
-which is why this has never had to be decided before.
+**`1` es una suposición educada de arranque, no un valor verificado** —
+asume que el edge de Railway agrega exactamente una entrada. No dejarlo
+sin verificar: la aplicación loguea el valor resuelto una vez al arrancar,
+así que revisar esa línea y confirmarla contra la cadena
+`X-Forwarded-For` real de un request real. Si Railway agrega dos saltos,
+`1` permite que alguien falsifique la entrada que lee el limitador. En
+local el valor correcto es `0` (no hay proxy delante de `api`), y por eso
+nunca hubo que decidir esto antes.
 
-## 4. Vercel — the frontend
+## 4. Vercel — el frontend
 
-Import the same repo. Settings:
+Importar el mismo repositorio. Configuración:
 
 - **Root directory**: `front`
-- Framework preset: Vite (auto-detected). Output `dist`.
+- Framework preset: Vite (se detecta solo). Output `dist`.
 
-Environment variable:
+Variable de entorno:
 
-| Variable | Value |
+| Variable | Valor |
 |---|---|
-| `VITE_API_BASE_URL` | the Railway API's public URL, no trailing slash |
+| `VITE_API_BASE_URL` | la URL pública de la API en Railway, sin barra final |
 
-`VITE_TENANT_SLUG` is **not** needed and should be left unset. The tenant
-resolves at runtime from the URL — that is the whole point of the
-tenant-from-url change. Setting it would only add a fallback for a first
-visit with no slug anywhere, and an empty value is handled.
+`VITE_TENANT_SLUG` **no** hace falta y hay que dejarla sin setear. El
+tenant se resuelve en tiempo de ejecución desde la URL — que es todo el
+propósito del cambio de tenant-desde-la-URL. Setearla sólo agregaría un
+fallback para una primera visita sin slug en ningún lado, y el caso del
+valor vacío ya está manejado.
 
-`front/vercel.json` supplies the SPA rewrite. It is load-bearing: without
-it, `/inicio` returns Vercel's 404 on refresh, and
-`/disponibilidad/aya` — the link the owner sends guests over WhatsApp —
-404s for everyone who opens it.
+`front/vercel.json` provee el rewrite de SPA. Es una pieza que sostiene
+todo lo demás: sin él, `/inicio` devuelve el 404 de Vercel al refrescar, y
+`/disponibilidad/aya` — el link que la dueña le manda a los huéspedes por
+WhatsApp — 404ea para todos los que lo abren.
 
-## 5. Railway — CORS, now that the origin exists
+## 5. Railway — CORS, ahora que el origen existe
 
-Set on the API service:
+Setear en el servicio de la API:
 
 ```
-CORS_ALLOWED_ORIGINS=https://<your-vercel-domain>
+CORS_ALLOWED_ORIGINS=https://<tu-dominio-de-vercel>
 ```
 
-Comma-separated for more than one origin. The literal `*` is **rejected at
-boot by a field validator**, not by code review. An explicit empty value
-is legal and means "no browser access, deliberately" — which is not what
-you want here.
+Separado por comas si hay más de un origen. El valor literal `*` es
+**rechazado al arrancar por un validador de campo**, no por revisión de
+código. Un valor explícitamente vacío es legal y significa "sin acceso
+desde el navegador, a propósito" — que no es lo que se busca acá.
 
-Redeploy the API so it picks the value up.
+Redeployar la API para que tome el valor.
 
-## 6. Create the real tenant
+## 6. Crear el tenant real
 
-Once the API is up, with the `REGISTRATION_TOKEN` you set in step 3:
+Con la API arriba, usando el `REGISTRATION_TOKEN` seteado en el paso 3:
 
 ```bash
 curl -X POST https://<api-host>/auth/register \
   -H "Content-Type: application/json" \
   -H "X-Registration-Token: <REGISTRATION_TOKEN>" \
-  -d '{"tenant_slug":"aya","name":"Alquileres AyA","email":"<hers>","password":"<hers>"}'
+  -d '{"tenant_slug":"aya","name":"Alquileres AyA","email":"<el de ella>","password":"<la de ella>"}'
 ```
 
-Then set the WhatsApp number with the returned token:
+Después setear el número de WhatsApp con el token devuelto:
 
 ```bash
 curl -X PATCH https://<api-host>/tenant \
@@ -175,47 +188,52 @@ curl -X PATCH https://<api-host>/tenant \
   -d '{"whatsapp":"5492612094262"}'
 ```
 
-The number must be the **full international form, digits only** — country
-code, then the number, no leading zero and no `15`. The API accepts `+`,
-spaces and punctuation and strips them, but it does **not** require a
-country code: a ten-digit local number saves cleanly and produces a
-`wa.me` link that fails silently. The settings sheet in the app says this
-in its own help text.
+El número tiene que estar en **formato internacional completo, sólo
+dígitos** — código de país, después el número, sin el 0 y sin el 15. La
+API acepta `+`, espacios y signos de puntuación y los limpia, pero **no**
+exige código de país: un número local de diez dígitos se guarda sin
+problema y produce un link de `wa.me` que falla en silencio. La hoja de
+ajustes de la aplicación aclara esto en su propio texto de ayuda.
 
-`tenant_slug` must be lowercase letters, digits and single hyphens, 3–63
-characters — enforced by Pydantic and by the `tenants_slug_format` CHECK.
+`tenant_slug` tiene que ser minúsculas, dígitos y guiones simples, de 3 a
+63 caracteres — validado por Pydantic y por el CHECK
+`tenants_slug_format`.
 
-> **The slug is unique, immutable, and appears in links sent to guests.**
-> Changing it later breaks every link already shared. `aya` was chosen
-> deliberately.
+> **El slug es único, inmutable, y aparece en links que se le mandan a los
+> huéspedes.** Cambiarlo más adelante rompe todos los links ya
+> compartidos. `aya` fue elegido deliberadamente.
 
-## 7. Hand over the two URLs
+## 7. Entregar las dos URLs
 
-- Owner: `https://<vercel-domain>/login/aya`
-- Public, for guests: `https://<vercel-domain>/disponibilidad/aya`
+- Para la dueña: `https://<dominio-de-vercel>/login/aya`
+- Pública, para los huéspedes: `https://<dominio-de-vercel>/disponibilidad/aya`
 
-## Verify before handing anything over
+## Verificar antes de entregar nada
 
-1. `GET https://<api-host>/health` returns OK.
-2. `/login/aya` shows **Alquileres AyA** as its title — that proves
-   `GET /public/aya/contact` resolved, which means the slug, the API URL
-   and CORS are all correct at once.
-3. `/login/nonexistent` shows the not-found sentence, not a login form.
-4. Sign in, then **refresh** `/inicio`. A 404 here means the SPA rewrite
-   is not active.
-5. Open `/disponibilidad/aya` in a private window and confirm the
-   WhatsApp button opens a chat with the right number.
-6. Sign in, wait out or force a 401, and confirm the redirect to `/login`
-   still knows the tenant. That is the persisted-slug path; if it is
-   broken the owner is locked out of her own app after every expiry.
+1. `GET https://<api-host>/health` responde OK.
+2. `/login/aya` muestra **Alquileres AyA** como título — eso prueba que
+   `GET /public/aya/contact` resolvió, lo que significa que el slug, la URL
+   de la API y el CORS están correctos los tres a la vez.
+3. `/login/inexistente` muestra la frase de "no encontrado", no un
+   formulario de login.
+4. Iniciar sesión y después **refrescar** `/inicio`. Un 404 acá significa
+   que el rewrite de SPA no está activo.
+5. Abrir `/disponibilidad/aya` en una ventana privada y confirmar que el
+   botón de WhatsApp abre un chat con el número correcto.
+6. Iniciar sesión, esperar o forzar un 401, y confirmar que la redirección
+   a `/login` sigue sabiendo cuál es el tenant. Ese es el camino del slug
+   persistido; si está roto, la dueña queda bloqueada afuera de su propia
+   aplicación después de cada expiración de sesión.
 
-## What is deliberately not here yet
+## Qué falta a propósito, todavía
 
-- **No CI.** Nothing runs the 885 frontend + 233 backend tests on push.
-  Both suites are green locally as of `3dcfcdb`.
-- **No backups verified.** Railway takes them; nobody has restored one.
-  A backup nobody has restored is a hypothesis.
-- **No custom domain.** Both platforms' default domains work; a custom
-  domain changes `VITE_API_BASE_URL` (rebuild) and `CORS_ALLOWED_ORIGINS`.
-- **No cabin photos.** The public page shows striped placeholders; uploads
-  are a deferred full-stack change.
+- **No hay CI.** Nada ejecuta los 885 tests del frontend ni los 233 del
+  backend al hacer push. Las dos suites están verdes en local a la altura
+  de `3dcfcdb`.
+- **Ningún backup verificado.** Railway los hace; nadie restauró uno. Un
+  backup que nadie restauró es una hipótesis.
+- **No hay dominio propio.** Los dominios por defecto de las dos
+  plataformas funcionan; un dominio propio cambia `VITE_API_BASE_URL`
+  (hay que reconstruir) y `CORS_ALLOWED_ORIGINS`.
+- **No hay fotos de las cabañas.** La página pública muestra placeholders
+  rayados; la subida de imágenes es un cambio full-stack diferido.
