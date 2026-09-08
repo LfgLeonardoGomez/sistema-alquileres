@@ -34,4 +34,9 @@ export const keys = {
   dashboard: () => ['dashboard'] as const,
   cabins: () => ['cabins'] as const,
   clients: () => ['clients'] as const,
+  // Tenant settings sheet: `GET`/`PATCH /tenant` (design D38/D39). Its own
+  // key, not folded under any existing entry -- a tenant is not a
+  // reservation, a cabin, or a client, and D30's invalidation table names
+  // no existing key this write should also touch.
+  tenant: () => ['tenant'] as const,
 }

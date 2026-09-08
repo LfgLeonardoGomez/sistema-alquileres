@@ -1,10 +1,13 @@
+import { useState } from 'react'
 import { Link } from 'react-router'
 import { Temporal } from 'temporal-polyfill'
 import type { YearMonth } from '../../shared/calendar/monthGrid'
-import { HOME_COPY, MONTH_LABELS } from '../../shared/copy/home'
+import { greetingForDate, HOME_COPY, MONTH_LABELS } from '../../shared/copy/home'
+import { TENANT_SETTINGS_COPY } from '../../shared/copy/tenant'
 import { todayAR } from '../../shared/date/todayAR'
 import { TabBar } from '../shell/TabBar'
 import { SignOutButton } from '../session/SignOutButton'
+import { TenantSettingsSheet } from '../tenant/TenantSettingsSheet'
 import { AvailabilitySearch } from './AvailabilitySearch'
 import { UpcomingArrivals } from './UpcomingArrivals'
 
@@ -37,7 +40,14 @@ function monthLabelFor(month: number): string {
 }
 
 export function HomeScreen() {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const monthLabel = monthLabelFor(currentYearMonth().month)
+  // `todayAR()` read fresh here too (not derived from `currentYearMonth()`
+  // above, which only keeps the month) -- `greetingForDate` is a pure
+  // function of the FULL date (design brief for the rotating-greeting
+  // defect fix), so the same phrase holds all day and changes only at
+  // midnight, never on every render/navigation back to Inicio.
+  const greeting = greetingForDate(todayAR())
 
   return (
     <div className="flex min-h-screen flex-col bg-page">
@@ -50,7 +60,7 @@ export function HomeScreen() {
       <div className="flex flex-1 flex-col gap-4 px-[22px] pt-16 pb-6">
         <div className="flex flex-col gap-0.5">
           <p className="text-[17px] font-bold text-faint">{monthLabel}</p>
-          <h1 className="text-[30px] font-extrabold tracking-tight text-primary">{HOME_COPY.greeting}</h1>
+          <h1 className="text-[30px] font-extrabold tracking-tight text-primary">{greeting}</h1>
         </div>
         {/* Owner's own framing (2026-09-07): "es lo que más me preguntan"
             -- her most frequent action, placed above "Próximas llegadas"
@@ -73,13 +83,32 @@ export function HomeScreen() {
             Note C(i) (approved 10.1(f)): a low-emphasis affordance owned by
             `app/session/`, composed here -- after "Anotar una reserva",
             above the tab bar -- rather than as a fifth tab. `TabBar.tsx`
-            itself is untouched by this or any task in this phase. */}
-        <SignOutButton />
+            itself is untouched by this or any task in this phase.
+
+            The tenant settings sheet's own trigger (this run's Part A,
+            "no settings screen" per the design handoff) sits in the SAME
+            row, never a fifth tab either and never adding height to this
+            column's own carefully budgeted `gap-4` (see the comment on
+            the outer `<div>` above) -- the sheet itself renders as a
+            `fixed inset-0` overlay (`shared/ui/Sheet.tsx`) when open, so
+            it never participates in this flow's own layout at all. */}
+        <div className="flex items-center justify-center gap-6">
+          <button
+            type="button"
+            className="text-center text-[17px] font-bold text-faint"
+            onClick={() => setIsSettingsOpen(true)}
+          >
+            {TENANT_SETTINGS_COPY.openSettings}
+          </button>
+          <SignOutButton />
+        </div>
       </div>
       {/* Handoff screen 02: "Sticky bottom tab bar (4 items: Inicio ·
           Calendario · Huéspedes · Cabañas)" -- every authenticated screen
           composes the same shared `TabBar` (task 3.23). */}
       <TabBar />
+
+      {isSettingsOpen ? <TenantSettingsSheet onClose={() => setIsSettingsOpen(false)} /> : null}
     </div>
   )
 }

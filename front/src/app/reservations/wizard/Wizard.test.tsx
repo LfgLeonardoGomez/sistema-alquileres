@@ -8,6 +8,8 @@ import { queryClient } from '../../../shared/mutation/queryClient'
 import { RESERVATION_WIZARD_COPY } from '../../../shared/copy/reservations'
 import { GUESTS_COPY } from '../../../shared/copy/guests'
 import { SESSION_COPY } from '../../../shared/copy/session'
+import { greetingForDate } from '../../../shared/copy/home'
+import { todayAR } from '../../../shared/date/todayAR'
 
 // The two test files in this suite that mount the REAL `routeConfig` pay a
 // cost none of the others do: every authenticated screen behind it is a
@@ -137,8 +139,21 @@ describe('Wizard', () => {
     await userEvent.click(screen.getByRole('button', { name: RESERVATION_WIZARD_COPY.guardar }))
 
     // A successful save navigates away from the wizard entirely (to
-    // /inicio) -- the wizard's own step-1 heading is gone.
-    await screen.findByText('Hola, Ana')
+    // /inicio) -- the wizard's own step-1 heading is gone. This line used
+    // to wait for the literal 'Hola, Ana', which the rotating-greeting
+    // change deleted; it waits for the DOM the same way, now through
+    // `greetingForDate(todayAR())` -- the same substitution
+    // `routes.test.tsx` made for its own two assertions.
+    //
+    // Deliberately NOT `waitFor(() => router.state.location.pathname)`:
+    // this codebase's own rule is that assertions after a navigation must
+    // await the DOM, never the router's state, because the router's
+    // location commits BEFORE React re-renders. In this file especially --
+    // one of only two mounting the real `routeConfig`, where every screen
+    // is a `lazy()` chunk (see this module's own header note) -- a
+    // pathname assertion would resolve while `/inicio` is still resolving
+    // its chunk, removing the very wait that makes this test stable.
+    await screen.findByText(greetingForDate(todayAR()))
 
     const { useWizardDraftStore } = await import('./store')
     expect(useWizardDraftStore.getState()).toMatchObject({ cabin: null, dates: null, guest: null, priceMode: null, amount: null })

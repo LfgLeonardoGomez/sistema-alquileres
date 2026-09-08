@@ -10,6 +10,7 @@ import { server } from '../../test/setup'
 import { HOME_COPY } from '../../shared/copy/home'
 import { SESSION_COPY } from '../../shared/copy/session'
 import { SHELL_COPY } from '../../shared/copy/shell'
+import { TENANT_SETTINGS_COPY } from '../../shared/copy/tenant'
 
 // home-summary spec (screen 02): one always-reachable action, and,
 // following the owner's live-review decision (2026-09-07), one "Próximas
@@ -77,6 +78,15 @@ function clientsHandler(clients: readonly ClientFixture[]) {
 
 function reservationsHandler(reservations: readonly ReservationFixture[]) {
   return http.get('http://localhost:8000/reservations', () => HttpResponse.json(reservations))
+}
+
+// Part A of this run's brief: the tenant settings sheet's own `GET /tenant`
+// (`app/tenant/useTenant.ts`), mocked here the same way every other
+// `HomeScreen`-fetched endpoint in this file already is.
+type TenantFixture = { id: string; slug: string; name: string; whatsapp: string | null }
+
+function tenantHandler(tenant: TenantFixture) {
+  return http.get('http://localhost:8000/tenant', () => HttpResponse.json(tenant))
 }
 
 function mockTodayAt(instant: string) {
@@ -188,6 +198,14 @@ describe('HomeScreen', () => {
   // satisfied) and the tab bar still rendering exactly four links (the
   // fifth-tab alternative Note C(i) rejected, pinned here so a later hand
   // cannot quietly take it).
+  //
+  // Extended (this run's brief, Part A) for the "Ajustes" settings-sheet
+  // trigger placed BESIDE sign-out (`HomeScreen.tsx:77`'s own precedent,
+  // per this run's instructions) -- composed into the SAME row, never a
+  // fifth tab and never adding height to this screen's carefully budgeted
+  // `gap-4` column (`HomeScreen.tsx`'s own comment on that budget), so the
+  // two "must not disturb" assertions below double as this addition's own
+  // geometry proof, not merely eyeballed.
   it('renders the sign-out affordance without displacing "Anotar una reserva" or the four-item tab bar', async () => {
     mockTodayAt('2026-09-15T12:00:00Z')
     server.use(dashboardHandler({ collected: '0.00', occupied_nights: 0, available_nights: 60 }))
@@ -196,11 +214,38 @@ describe('HomeScreen', () => {
     renderHomeScreen(HomeScreen)
 
     expect(await screen.findByRole('button', { name: SESSION_COPY.signOut })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: TENANT_SETTINGS_COPY.openSettings })).toBeInTheDocument()
 
     const addReservationLink = screen.getByRole('link', { name: HOME_COPY.addReservation })
     expect(addReservationLink).toHaveAttribute('href', '/reserva/nueva/1')
 
     const tabBar = screen.getByRole('navigation', { name: SHELL_COPY.tabBarLabel })
     expect(within(tabBar).getAllByRole('link')).toHaveLength(4)
+  })
+
+  // Part A of this run's brief: tapping "Ajustes" opens the settings
+  // BOTTOM SHEET (never a screen/route -- `router.state.location.pathname`
+  // stays `/inicio`), showing the business name read-only and the current
+  // WhatsApp number -- the first frontend consumer of `GET /tenant`
+  // reached from Home.
+  it('opens the tenant settings sheet from "Ajustes", showing the business name and current WhatsApp number, without navigating away from /inicio', async () => {
+    mockTodayAt('2026-09-15T12:00:00Z')
+    server.use(
+      dashboardHandler({ collected: '0.00', occupied_nights: 0, available_nights: 60 }),
+      tenantHandler({ id: 'ten-1', slug: 'aya', name: 'Alquileres AyA', whatsapp: '5492612094262' }),
+    )
+
+    const { HomeScreen } = await import('./HomeScreen')
+    const user = userEvent.setup()
+    const { router } = renderHomeScreen(HomeScreen)
+
+    await user.click(await screen.findByRole('button', { name: TENANT_SETTINGS_COPY.openSettings }))
+
+    expect(await screen.findByText('Alquileres AyA')).toBeInTheDocument()
+    expect(screen.getByLabelText(TENANT_SETTINGS_COPY.whatsappLabel)).toHaveValue('5492612094262')
+    expect(router.state.location.pathname).toBe('/inicio')
+
+    await user.click(screen.getByRole('button', { name: TENANT_SETTINGS_COPY.close }))
+    expect(screen.queryByRole('dialog', { name: TENANT_SETTINGS_COPY.title })).not.toBeInTheDocument()
   })
 })

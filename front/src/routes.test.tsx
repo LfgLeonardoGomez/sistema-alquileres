@@ -8,7 +8,8 @@ import { queryClient } from './shared/mutation/queryClient'
 import { SESSION_COPY } from './shared/copy/session'
 import { ROUTING_COPY } from './shared/copy/routing'
 import { SHELL_COPY } from './shared/copy/shell'
-import { HOME_COPY } from './shared/copy/home'
+import { greetingForDate } from './shared/copy/home'
+import { todayAR } from './shared/date/todayAR'
 import { PUBLIC_COPY } from './shared/copy/public'
 
 // The two test files in this suite that mount the REAL `routeConfig` pay a
@@ -293,7 +294,7 @@ describe('routes', () => {
     render(<RouterProvider router={router} />)
 
     expect(await screen.findByLabelText(SESSION_COPY.emailLabel)).toBeInTheDocument()
-    expect(screen.queryByText(HOME_COPY.greeting)).not.toBeInTheDocument()
+    expect(screen.queryByText(greetingForDate(todayAR()))).not.toBeInTheDocument()
   })
 
   // 10.15 [TRIANGULATE]: table-driven over every authenticated path, plus
@@ -327,7 +328,7 @@ describe('routes', () => {
     const router = createMemoryRouter(routeConfig, { initialEntries: ['/inicio'] })
     render(<RouterProvider router={router} />)
 
-    expect(await screen.findByText(HOME_COPY.greeting)).toBeInTheDocument()
+    expect(await screen.findByText(greetingForDate(todayAR()))).toBeInTheDocument()
     expect(screen.queryByLabelText(SESSION_COPY.emailLabel)).not.toBeInTheDocument()
   })
 
