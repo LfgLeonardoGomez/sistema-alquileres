@@ -3,6 +3,8 @@ import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-route
 import { apiRequest } from '../api/client'
 import { SESSION_COPY } from '../../shared/copy/session'
 import { env } from '../../env'
+import type { ApiError } from '../../shared/errors/ApiError'
+import { resolveErrorCopy } from '../../shared/errors/resolve'
 import { Button, fieldLabelClass, inputClass } from '../../shared/ui'
 import { useSessionStore } from './store'
 import { resolveReturnPath } from './returnPath'
@@ -33,6 +35,7 @@ export function LoginScreen() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const setToken = useSessionStore((state) => state.setToken)
   // owner-session spec's "An Authenticated Visitor Is Not Shown The Sign-In
   // Screen" (10.10/10.11), Note A's same `<Navigate replace/>` shape as
@@ -67,6 +70,7 @@ export function LoginScreen() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setSubmitError(null)
     try {
       const response = await apiRequest<LoginResponse>('/auth/login', {
         method: 'POST',
@@ -81,19 +85,24 @@ export function LoginScreen() {
       // in-app path, otherwise `/inicio` -- resolved by 10.2-10.6's own
       // unit, never inlined here.
       navigate(resolveReturnPath(location.state), { replace: true })
-    } catch {
+    } catch (caught) {
       // owner-session spec's "A rejected sign-in navigates nowhere"
-      // (10.9(b)): she stays on the form. The thrown `ApiError` is
-      // swallowed here rather than surfaced -- this screen never rendered
-      // one before this task either -- and this catch's only added job is
-      // to stop that rejection reaching the console as an unhandled
-      // promise rejection. Note D's wart, not fixed here: a wrong password
-      // is itself a 401, so it also passes through `client.ts`'s own
-      // interceptor, which clears the (already-empty) session and
-      // re-navigates to `/login` carrying `expired: true` -- the approved
-      // re-entry copy for an EXPIRED session, shown for a typo instead.
-      // Out of this phase's scope (Note D), and irrelevant to this catch,
-      // which only prevents a crash.
+      // (10.9(b)): she stays on the form. Note D fix (owner-approved
+      // 2026-09-07, "si dale"): this catch no longer swallows the
+      // rejection. `apiRequest` never throws anything but a normalised
+      // `ApiError` (see `client.ts`'s own docs on `issueRequest`), so the
+      // cast below is safe under this module's own invariant. A 401 here
+      // is specifically a wrong email/password -- `client.ts` now exempts
+      // `/auth/login` from its 401 interceptor (scoped to the path, never
+      // to token presence), so this is the only place a login 401 is
+      // handled, and it renders the credential-rejection copy rather than
+      // the unrelated expired-session message. Anything else (network
+      // failure, server fault) reuses `resolveErrorCopy`'s own table
+      // (design D32) instead of inventing a second one.
+      const apiError = caught as ApiError
+      setSubmitError(
+        apiError.status === 401 ? SESSION_COPY.invalidCredentialsMessage : resolveErrorCopy(apiError),
+      )
     }
   }
 
@@ -104,6 +113,11 @@ export function LoginScreen() {
         <div className="text-lg text-muted">{SESSION_COPY.subtitle}</div>
       </div>
       {showExpiredMessage ? <p className="mb-4 text-base text-warm">{SESSION_COPY.expiredMessage}</p> : null}
+      {submitError !== null ? (
+        <p role="alert" className="mb-4 text-base font-bold text-warm">
+          {submitError}
+        </p>
+      ) : null}
       <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
         <label className="flex flex-col gap-2">
           <span className={fieldLabelClass}>{SESSION_COPY.emailLabel}</span>

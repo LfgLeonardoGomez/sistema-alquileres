@@ -249,6 +249,63 @@ describe('LoginScreen', () => {
       const { useSessionStore } = await import('./store')
       useSessionStore.getState().clearToken()
     })
+
+    // Note D fix, owner-approved 2026-09-07 ("si dale"): a wrong password is
+    // itself a 401, and until this task `client.ts`'s own interceptor could
+    // not tell that apart from an expired session, clearing the (already
+    // empty) session and re-navigating to `/login` with `expired: true` --
+    // the approved re-entry copy shown for a typo instead of a real
+    // rejection message. `client.ts` now exempts `/auth/login` from that
+    // interceptor (scoped to the path, never to token presence -- see that
+    // file's own comment), and this screen renders the credential-rejection
+    // copy in its place.
+    it('shows the credential-rejection message on a wrong password, not the expired-session copy, and stays on /login', async () => {
+      server.use(
+        http.post('http://localhost:8000/auth/login', () =>
+          HttpResponse.json({ detail: 'Invalid credentials', code: null }, { status: 401 }),
+        ),
+      )
+      const { LoginScreen } = await import('./LoginScreen')
+      const user = userEvent.setup()
+      const router = renderLoginAt(LoginScreen, '/login')
+
+      await user.type(screen.getByLabelText(SESSION_COPY.emailLabel), 'owner@example.com')
+      await user.type(screen.getByLabelText(SESSION_COPY.passwordLabel), 'wrong-password')
+      await user.click(screen.getByRole('button', { name: SESSION_COPY.submit }))
+
+      expect(await screen.findByText(SESSION_COPY.invalidCredentialsMessage)).toBeInTheDocument()
+      expect(screen.queryByText(SESSION_COPY.expiredMessage)).not.toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/login')
+
+      const { useSessionStore } = await import('./store')
+      useSessionStore.getState().clearToken()
+    })
+
+    // Same rejection, triangulated on a different axis: with the interceptor
+    // no longer remounting this screen via a router navigation, nothing
+    // resets the two controlled inputs -- what she typed must still be
+    // there for her to correct.
+    it('keeps the typed email and password after a rejected submit', async () => {
+      server.use(
+        http.post('http://localhost:8000/auth/login', () =>
+          HttpResponse.json({ detail: 'Invalid credentials', code: null }, { status: 401 }),
+        ),
+      )
+      const { LoginScreen } = await import('./LoginScreen')
+      const user = userEvent.setup()
+      renderLoginAt(LoginScreen, '/login')
+
+      await user.type(screen.getByLabelText(SESSION_COPY.emailLabel), 'owner@example.com')
+      await user.type(screen.getByLabelText(SESSION_COPY.passwordLabel), 'wrong-password')
+      await user.click(screen.getByRole('button', { name: SESSION_COPY.submit }))
+
+      await screen.findByText(SESSION_COPY.invalidCredentialsMessage)
+      expect(screen.getByLabelText(SESSION_COPY.emailLabel)).toHaveValue('owner@example.com')
+      expect(screen.getByLabelText(SESSION_COPY.passwordLabel)).toHaveValue('wrong-password')
+
+      const { useSessionStore } = await import('./store')
+      useSessionStore.getState().clearToken()
+    })
   })
 
   // owner-session spec's "An Authenticated Visitor Is Not Shown The Sign-In

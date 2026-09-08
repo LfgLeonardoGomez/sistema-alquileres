@@ -24,5 +24,15 @@ export const SESSION_COPY = {
   passwordLabel: 'Tu contraseña',
   submit: 'Entrar',
   expiredMessage: 'Entrá de nuevo para seguir.',
+  // Note D's wart (flagged, unfixed, in `LoginScreen.tsx`'s own prior
+  // comment), fixed on the owner's explicit approval of this exact plan,
+  // live in conversation on 2026-09-07 ("si dale"): a wrong password is a
+  // 401 too, and until this string existed it fell through to
+  // `expiredMessage` above -- session-expiry copy shown for a typo.
+  // `client.ts`'s 401 interceptor now exempts `/auth/login`, and
+  // `LoginScreen` renders this string instead for exactly that case. Reads
+  // as a plain correction, not a technical failure -- no "error", no status
+  // code, no "usuario"/"cliente" (the glossary guard's own forbidden list).
+  invalidCredentialsMessage: 'Ese correo y esa contraseña no coinciden.',
   signOut: 'Cerrar sesión',
 } as const

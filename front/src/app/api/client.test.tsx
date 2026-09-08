@@ -293,4 +293,65 @@ describe('apiRequest', () => {
       useSessionStore.getState().clearToken()
     })
   })
+
+  // Note D fix, owner-approved 2026-09-07 ("si dale"): `POST /auth/login`
+  // returning 401 means a wrong password, not an expired session -- the
+  // interceptor above must not treat it as one. Scoped to the exact
+  // request PATH, never to "is there currently a token in the store": an
+  // already-expired token is cleared proactively by `store.ts`'s own
+  // `checkExpiry` before the request is even sent (see `store.ts`'s
+  // window-focus listener and `initialToken`), so a token-presence
+  // condition here would ALSO skip the real "401 during an authenticated
+  // session" case this interceptor exists for -- exactly the alternative
+  // the orchestrator rejected when approving this plan.
+  describe('the /auth/login exemption from the 401 interceptor', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('does not clear the token or navigate when a 401 comes from /auth/login', async () => {
+      server.use(
+        http.post('http://localhost:8000/auth/login', () =>
+          HttpResponse.json({ detail: 'Invalid credentials', code: null }, { status: 401 }),
+        ),
+      )
+      const { router } = await import('../../routes')
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().setToken('a-valid-looking-token')
+      const navigateSpy = vi.spyOn(router, 'navigate').mockImplementation(() => Promise.resolve())
+
+      const { apiRequest } = await import('./client')
+
+      await expect(apiRequest('/auth/login', { method: 'POST' })).rejects.toEqual({ status: 401, code: null })
+      expect(useSessionStore.getState().token).toBe('a-valid-looking-token')
+      expect(navigateSpy).not.toHaveBeenCalled()
+
+      useSessionStore.getState().clearToken()
+    })
+
+    // Triangulates the exemption's own scope: a 401 from any OTHER path
+    // still clears the token and navigates -- the exemption is anchored to
+    // the literal `/auth/login` path, not a blanket weakening of the
+    // interceptor above.
+    it('still clears the token and navigates for a 401 from a non-login endpoint', async () => {
+      server.use(
+        http.get('http://localhost:8000/reservations', () =>
+          HttpResponse.json({ detail: 'Invalid or expired token', code: null }, { status: 401 }),
+        ),
+      )
+      const { router } = await import('../../routes')
+      const { useSessionStore } = await import('../session/store')
+      useSessionStore.getState().setToken('a-valid-looking-token')
+      await router.navigate('/inicio')
+      const navigateSpy = vi.spyOn(router, 'navigate').mockImplementation(() => Promise.resolve())
+
+      const { apiRequest } = await import('./client')
+
+      await expect(apiRequest('/reservations')).rejects.toEqual({ status: 401, code: null })
+      expect(useSessionStore.getState().token).toBeNull()
+      expect(navigateSpy).toHaveBeenCalledWith('/login', { state: { expired: true, from: '/inicio' } })
+
+      useSessionStore.getState().clearToken()
+    })
+  })
 })

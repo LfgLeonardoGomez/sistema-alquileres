@@ -60,7 +60,20 @@ async function issueRequest(path: string, init?: RequestInit): Promise<{ status:
     throw cause
   }
 
-  if (response.status === 401) {
+  // Note D fix (owner-approved 2026-09-07, "si dale"): `POST /auth/login`
+  // returning 401 is a credential rejection (wrong email/password), never
+  // an expired session -- exempted from the interceptor below by request
+  // PATH alone. Deliberately NOT "skip when the store holds no token":
+  // `store.ts`'s own proactive `checkExpiry` (module load + window focus)
+  // already clears an expired token BEFORE any request goes out, so a
+  // token-presence condition here would also skip the real "401 during an
+  // authenticated session" case this interceptor exists for. The `!ok`
+  // branch just below still normalises and throws this 401 for the caller
+  // (`LoginScreen`) to handle -- only the clear-and-redirect side effects
+  // are skipped.
+  const isLoginRequest = path === '/auth/login'
+
+  if (response.status === 401 && !isLoginRequest) {
     useSessionStore.getState().clearToken()
     // D29(c) (approved 2026-09-05, task 3.15/3.16): a `state.expired` flag
     // on the navigation, not a query param or a second store field, so
