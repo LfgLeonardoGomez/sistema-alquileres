@@ -84,6 +84,20 @@ export function availabilitySummary(freeCount: number, totalCount: number): stri
 }
 
 /**
+ * Accessible name for a "Libre" row's own action. The row's visible text
+ * (`availabilityFree`, "Libre") names the cabin and its status, not what
+ * activating the row DOES -- owner's own words (2026-09-07): a "Libre" row
+ * IS the start of a reservation with that cabin and those dates, not merely
+ * a fact about them. `dateRangeLabel` is `shared/date/format.ts`'s own
+ * `formatDateRange` output, passed in rather than recomputed here -- this
+ * module never touches a `PlainDate` directly (design D26's own boundary,
+ * `arrivalDateLabel`'s established shape just above).
+ */
+export function availabilityBookAction(cabinName: string, dateRangeLabel: string): string {
+  return `Anotar reserva para ${cabinName}, ${dateRangeLabel}`
+}
+
+/**
  * Chooses between "hoy"/"mañana" and a plain `D/M` date for an arrival row.
  * Takes the day-count and the already-formatted date as plain values (the
  * same "copy decides the wording, a date/money module only computes"

@@ -1,7 +1,10 @@
 import { useState } from 'react'
-import { availabilitySummary, HOME_COPY } from '../../shared/copy/home'
+import { Link } from 'react-router'
+import { availabilityBookAction, availabilitySummary, HOME_COPY } from '../../shared/copy/home'
+import { formatDateRange } from '../../shared/date/format'
 import { parsePlainDate, type PlainDate } from '../../shared/date/parsePlainDate'
 import { Card, fieldLabelClass } from '../../shared/ui'
+import { useWizardDraftStore } from '../reservations/wizard/store'
 import { useAvailabilitySearch } from './useAvailabilitySearch'
 
 // Not `shared/ui/tokens.ts`'s own `inputClass`: a native `<input
@@ -41,6 +44,15 @@ export function AvailabilitySearch() {
   const [checkIn, setCheckIn] = useState<PlainDate | null>(null)
   const [checkOut, setCheckOut] = useState<PlainDate | null>(null)
   const result = useAvailabilitySearch(checkIn, checkOut)
+  // Selected individually, not the whole draft (`Wizard.tsx`'s own
+  // `useWizardDraftStore()` call, which needs to READ every field to route
+  // steps) -- this screen only ever WRITES, once, on tap, so it has no use
+  // subscribing to `cabin`/`dates`/`guest`/`priceMode`/`amount` themselves.
+  // Zustand action references are stable across renders (`store.ts`'s own
+  // `create` factory builds them once), so this selector never triggers an
+  // extra re-render this screen didn't already need.
+  const setDraftCabin = useWizardDraftStore((state) => state.setCabin)
+  const setDraftDates = useWizardDraftStore((state) => state.setDates)
 
   return (
     <Card className="flex flex-col gap-2.5">
@@ -79,7 +91,13 @@ export function AvailabilitySearch() {
 
       {result.kind === 'loading' ? <p className="text-base text-faint">{HOME_COPY.availabilityLoading}</p> : null}
 
-      {result.kind === 'ready' ? (
+      {/* `checkIn`/`checkOut !== null` is redundant with `result.kind ===
+          'ready'` at runtime (`useAvailabilitySearch` only reaches "ready"
+          once both are non-null) -- it exists so TypeScript, which cannot
+          see that relationship across two independently-typed hooks,
+          narrows both to `PlainDate` for the "Libre" row's own
+          `setDraftDates`/`formatDateRange` calls below. */}
+      {result.kind === 'ready' && checkIn !== null && checkOut !== null ? (
         <>
           <p className="text-base font-bold text-secondary">
             {availabilitySummary(result.rows.filter((row) => row.isFree).length, result.rows.length)}
@@ -90,17 +108,61 @@ export function AvailabilitySearch() {
               this list (home-summary spec "No Revenue Figure Is Ever
               Rendered"): `AvailabilityRow` structurally carries none. */}
           <ul className="flex flex-col">
-            {result.rows.map((row, index) => (
-              <li
-                key={row.cabinId}
-                className={`flex items-center justify-between ${index > 0 ? 'mt-1.5 border-t border-divider pt-1.5' : ''}`}
-              >
-                <span className="text-base font-bold text-primary">{row.cabinName}</span>
-                <span className={`text-base font-extrabold ${row.isFree ? 'text-green-ink' : 'text-warm'}`}>
-                  {row.isFree ? HOME_COPY.availabilityFree : HOME_COPY.availabilityOccupied}
-                </span>
-              </li>
-            ))}
+            {result.rows.map((row, index) => {
+              const rowClassName = `flex items-center justify-between ${index > 0 ? 'mt-1.5 border-t border-divider pt-1.5' : ''}`
+
+              // "Ocupada" -- nothing to book, so it stays exactly what it
+              // was: plain, non-interactive text (owner's own approval of
+              // the row "as it shows"; only "Libre" is missing an action).
+              if (!row.isFree) {
+                return (
+                  <li key={row.cabinId} className={rowClassName}>
+                    <span className="text-base font-bold text-primary">{row.cabinName}</span>
+                    <span className="text-base font-extrabold text-warm">{HOME_COPY.availabilityOccupied}</span>
+                  </li>
+                )
+              }
+
+              // Owner's own words (2026-09-07): "para no tener que
+              // verificar, ver disponibilidad, confirmamos y después
+              // empezamos de nuevo presionando anotar una reserva y volver a
+              // cargar las fechas, casa, etc." -- a "Libre" row IS the start
+              // of the reservation, not merely a fact about it.
+              //
+              // `setDraftCabin`/`setDraftDates` run inside this `Link`'s own
+              // `onClick`, which `react-router`'s `Link` ALWAYS calls before
+              // its internal navigate handler (`useLinkClickHandler`,
+              // composed as `onClick(event); if (!defaultPrevented)
+              // internalOnClick(event)`) -- both Zustand `set()` calls are
+              // synchronous, so by the time `Wizard.tsx`'s step-3 guard
+              // (`draft.cabin === null || draft.dates === null`) ever reads
+              // the store, both fields are already committed. Reusing this
+              // convention (a `<Link>` wrapping the row, `WhoStays.tsx`'s
+              // own established shape for a tappable row that navigates to
+              // another screen) makes that ordering structural, not
+              // something a future edit could accidentally reverse by
+              // reaching for `useNavigate()` instead.
+              //
+              // The exact `PlainDate`s the search already holds go straight
+              // onto the draft -- never re-parsed, re-derived, or run
+              // through a `Date` (design D26).
+              return (
+                <li key={row.cabinId} className={rowClassName}>
+                  <Link
+                    to="/reserva/nueva/3"
+                    className="flex w-full items-center justify-between rounded-field focus:outline-none focus:ring-2 focus:ring-accent-soft-2"
+                    aria-label={availabilityBookAction(row.cabinName, formatDateRange(checkIn, checkOut))}
+                    onClick={() => {
+                      setDraftCabin({ id: row.cabinId, name: row.cabinName })
+                      setDraftDates({ checkIn, checkOut })
+                    }}
+                  >
+                    <span className="text-base font-bold text-primary">{row.cabinName}</span>
+                    <span className="text-base font-extrabold text-green-ink">{HOME_COPY.availabilityFree}</span>
+                  </Link>
+                </li>
+              )
+            })}
           </ul>
         </>
       ) : null}
