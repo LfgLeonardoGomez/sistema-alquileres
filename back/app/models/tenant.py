@@ -23,6 +23,14 @@ class Tenant(Base):
         CheckConstraint(
             "whatsapp ~ '^[0-9]{8,15}$'", name="tenants_whatsapp_format"
         ),
+        # Mirrors migrations/versions/0004_tenant_slug_format.py's
+        # `_SLUG_FORMAT_SQL` verbatim -- see app/schemas/auth.py's
+        # `RegisterRequest.normalise_slug` for the app-layer half of this
+        # house pattern (design D11).
+        CheckConstraint(
+            "char_length(slug) BETWEEN 3 AND 63 AND slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'",
+            name="tenants_slug_format",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

@@ -97,3 +97,24 @@ def test_login_with_wrong_slug_returns_generic_401() -> None:
     )
     assert wrong_password_response.status_code == 401
     assert wrong_password_response.json()["detail"] == wrong_slug_detail
+
+
+def test_login_accepts_a_slug_shape_registration_would_now_reject() -> None:
+    """Regression guard: `RegisterRequest.tenant_slug` gained format
+    validation in this change (design D11, migration `0004`);
+    `LoginRequest.tenant_slug` deliberately did not. Login resolves an
+    EXISTING row by whatever string it is given -- tightening it would lock
+    out any tenant whose slug predates the CHECK constraint. A slug shape
+    that registration now rejects must still reach the lookup here and fail
+    with the generic 401 (no such row), never a 422 from a format
+    validator that does not exist on this schema."""
+    response = client.post(
+        "/auth/login",
+        json={
+            "tenant_slug": "Not A Valid Slug!",
+            "email": "someone@example.com",
+            "password": "irrelevant-password",
+        },
+        headers={"X-Forwarded-For": fresh_client_address()},
+    )
+    assert response.status_code == 401

@@ -6,9 +6,11 @@ call."""
 
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from app.main import app
 from tests.conftest import fresh_client_address
@@ -123,3 +125,120 @@ def test_registering_a_duplicate_tenant_slug_is_rejected() -> None:
     )
 
     assert duplicate.status_code == 409, duplicate.text
+
+
+# ---- tenant_slug format validation (design D11: Pydantic first, migration
+# `0004`'s `tenants_slug_format` CHECK as the concurrent-safe backstop).
+# `LoginRequest.tenant_slug` is deliberately untouched -- see
+# tests/test_auth_login.py::test_login_accepts_a_slug_shape_registration_would_now_reject
+# for that regression guard. ----
+
+
+def _attempt_register(slug: str):
+    return client.post(
+        "/auth/register",
+        headers={"X-Registration-Token": VALID_TOKEN, "X-Forwarded-For": fresh_client_address()},
+        json={
+            "tenant_slug": slug,
+            "name": "New Owner",
+            "email": f"owner-{uuid.uuid4().hex[:8]}@example.com",
+            "password": "a-strong-password",
+        },
+    )
+
+
+def _assert_no_tenant_with_slug(migrator_engine: Engine, slug: str) -> None:
+    with migrator_engine.connect() as conn:
+        row = conn.execute(text("SELECT 1 FROM tenants WHERE slug = :slug"), {"slug": slug}).first()
+    assert row is None
+
+
+def test_register_with_well_formed_slug_succeeds() -> None:
+    response = _attempt_register("aya")
+    assert response.status_code == 201, response.text
+
+
+def test_register_rejects_slug_with_a_space(migrator_engine: Engine) -> None:
+    response = _attempt_register("aya slug")
+    assert response.status_code == 422
+    _assert_no_tenant_with_slug(migrator_engine, "aya slug")
+
+
+def test_register_rejects_slug_with_a_character_outside_allowed_set(
+    migrator_engine: Engine,
+) -> None:
+    response = _attempt_register("aya!")
+    assert response.status_code == 422
+    _assert_no_tenant_with_slug(migrator_engine, "aya!")
+
+
+def test_register_rejects_empty_slug(migrator_engine: Engine) -> None:
+    response = _attempt_register("")
+    assert response.status_code == 422
+    _assert_no_tenant_with_slug(migrator_engine, "")
+
+
+def test_register_rejects_over_length_slug(migrator_engine: Engine) -> None:
+    slug = "a" * 64
+    response = _attempt_register(slug)
+    assert response.status_code == 422
+    _assert_no_tenant_with_slug(migrator_engine, slug)
+
+
+def test_register_rejects_under_length_slug(migrator_engine: Engine) -> None:
+    response = _attempt_register("ab")
+    assert response.status_code == 422
+    _assert_no_tenant_with_slug(migrator_engine, "ab")
+
+
+def test_register_rejects_slug_with_leading_hyphen(migrator_engine: Engine) -> None:
+    response = _attempt_register("-aya")
+    assert response.status_code == 422
+    _assert_no_tenant_with_slug(migrator_engine, "-aya")
+
+
+def test_register_rejects_slug_with_consecutive_hyphens(migrator_engine: Engine) -> None:
+    response = _attempt_register("aya--rentals")
+    assert response.status_code == 422
+    _assert_no_tenant_with_slug(migrator_engine, "aya--rentals")
+
+
+def test_register_normalises_uppercase_slug_to_lowercase_in_db(migrator_engine: Engine) -> None:
+    raw_slug = f"AYA-{uuid.uuid4().hex[:8].upper()}"
+    response = _attempt_register(raw_slug)
+    assert response.status_code == 201, response.text
+
+    with migrator_engine.connect() as conn:
+        stored = conn.execute(
+            text("SELECT slug FROM tenants WHERE slug = :slug"), {"slug": raw_slug.lower()}
+        ).scalar()
+    assert stored == raw_slug.lower()
+
+
+def test_register_normalises_surrounding_whitespace_in_db(migrator_engine: Engine) -> None:
+    core_slug = f"aya-{uuid.uuid4().hex[:8]}"
+    response = _attempt_register(f"  {core_slug}  ")
+    assert response.status_code == 201, response.text
+
+    with migrator_engine.connect() as conn:
+        stored = conn.execute(
+            text("SELECT slug FROM tenants WHERE slug = :slug"), {"slug": core_slug}
+        ).scalar()
+    assert stored == core_slug
+
+
+def test_direct_insert_with_invalid_slug_format_raises_23514(app_engine: Engine) -> None:
+    """The concurrency-safe backstop (design D11), proven independently of
+    the Pydantic 422 path above -- migration `0004`'s `tenants_slug_format`
+    CHECK. Connects as `alquileres_app`, the same role the real API uses;
+    `tenants_insert`'s RLS policy is `WITH CHECK (true)` for this role
+    (migration `0002`), so the CHECK constraint is the only thing standing
+    between this INSERT and a badly-shaped row landing in the table."""
+    with pytest.raises(IntegrityError) as exc_info:
+        with app_engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO tenants (id, slug, name) VALUES (:id, :slug, :name)"),
+                {"id": uuid.uuid4(), "slug": "Not A Valid Slug!", "name": "Bad Slug Tenant"},
+            )
+
+    assert exc_info.value.orig.sqlstate == "23514"
