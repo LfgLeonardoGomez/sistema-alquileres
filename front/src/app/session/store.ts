@@ -9,11 +9,24 @@ import { env } from '../../env'
 // cannot use a hook. `useSessionStore.getState()`/`.setState()` are the
 // non-hook access points that make that possible.
 //
-// The token is the ONLY thing persisted (to `localStorage`, approved
-// D29(a)). `tenantSlug` is read fresh from `env.ts` at module load, never
-// persisted -- it is a build-time constant, not session state.
+// The token is persisted to `localStorage` (approved D29(a)).
+//
+// `tenantSlug` (tenant-from-url change, owner-approved 2026-09-08): no
+// longer a build-time constant read once from `env.ts` and left alone --
+// this field is now LIVE, persisted to `localStorage` the same way the
+// token is, via `setTenantSlug`/`persistTenantSlug` below. Deliberately
+// NOT cleared by `clearToken`: the token identifies WHO she is and expires;
+// the slug identifies WHICH tenant, a fact a 401 does not change. This is
+// what makes the lockout guard work -- `client.ts`'s 401 interceptor
+// navigates to a BARE `/login` with no slug in the URL, and `LoginScreen`
+// (`app/session/LoginScreen.tsx`) falls back to this persisted value so an
+// expired session does not strand her on a form that cannot know which
+// tenant to authenticate against. `env.ts`'s `tenantSlug` remains the very
+// last resort, read once here at module load, for a browser that has never
+// persisted one yet.
 
 const TOKEN_STORAGE_KEY = 'owner-session-token'
+const TENANT_SLUG_STORAGE_KEY = 'owner-session-tenant-slug'
 
 export type SessionState = {
   readonly token: string | null
@@ -26,6 +39,14 @@ type SessionActions = {
   readonly setToken: (token: string) => void
   /** Clears the token from both memory and storage -- the 401 interceptor's own action (3.14). */
   readonly clearToken: () => void
+  /**
+   * Persists the resolved tenant slug (`localStorage`, same discipline as
+   * `setToken`) and updates state. Called by `LoginScreen` whenever it
+   * resolves a slug, from any source in its own resolution order --
+   * deliberately NOT limited to a successful sign-in, so the lockout guard
+   * has a value to fall back to even before she submits the form.
+   */
+  readonly setTenantSlug: (slug: string) => void
   /**
    * Proactive expiry (D29(b)): re-checks the CURRENTLY held token's `exp`
    * claim against now and clears it if expired. Called on module load (via
@@ -99,6 +120,23 @@ function clearStoredToken(): void {
   }
 }
 
+function readStoredTenantSlug(): string | null {
+  try {
+    return localStorage.getItem(TENANT_SLUG_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function persistTenantSlug(slug: string): void {
+  try {
+    localStorage.setItem(TENANT_SLUG_STORAGE_KEY, slug)
+  } catch {
+    // Same rationale as `persistToken` above: a private-browsing quota
+    // rejection must not crash the app.
+  }
+}
+
 // Proactive expiry, "on app start" half (D29(b)): hydrates `isAuthenticated`
 // from `localStorage` at module load -- before first render, task 3.10 --
 // treating an expired stored token as absent rather than surfacing it and
@@ -117,7 +155,7 @@ const startingToken = initialToken()
 
 export const useSessionStore = create<SessionState & SessionActions>((set, get) => ({
   token: startingToken,
-  tenantSlug: env.tenantSlug,
+  tenantSlug: readStoredTenantSlug() ?? env.tenantSlug,
   isAuthenticated: startingToken !== null,
 
   setToken(token) {
@@ -128,6 +166,11 @@ export const useSessionStore = create<SessionState & SessionActions>((set, get) 
   clearToken() {
     clearStoredToken()
     set({ token: null, isAuthenticated: false })
+  },
+
+  setTenantSlug(slug) {
+    persistTenantSlug(slug)
+    set({ tenantSlug: slug })
   },
 
   checkExpiry() {

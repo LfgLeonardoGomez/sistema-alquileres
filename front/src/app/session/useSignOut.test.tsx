@@ -1,8 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { HttpResponse, http } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SESSION_COPY } from '../../shared/copy/session'
+import { server } from '../../test/setup'
 
 // owner-session spec's "The Owner Can Sign Out From Inside The App" +
 // "A Deliberate Sign-Out Is Not Presented As An Expired Session", Note
@@ -145,6 +147,15 @@ describe('useSignOut', () => {
   // assertion could not reliably pin -- is the one that actually catches
   // the reversal, proved below.
   it('[TRAP] lands on the sign-in form and stays there, and calls clearToken() strictly before navigate()', async () => {
+    // tenant-from-url change: the real `LoginScreen` (used here, unlike
+    // every other test in this file's own stand-in) now fetches `GET
+    // /public/{slug}/contact` on mount -- this test does not care about
+    // the resolved tenant name, only that the form renders.
+    server.use(
+      http.get('http://localhost:8000/public/:slug/contact', () =>
+        HttpResponse.json({ name: 'Tenant', whatsapp: null }),
+      ),
+    )
     const { useSessionStore } = await import('./store')
     const { LoginScreen } = await import('./LoginScreen')
     useSessionStore.getState().setToken('a.b.c')

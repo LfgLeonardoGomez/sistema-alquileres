@@ -1,8 +1,8 @@
-import { type FormEvent, useState } from 'react'
-import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { type FormEvent, useEffect, useState } from 'react'
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { apiRequest } from '../api/client'
+import { getPublicContact } from '../../public/api'
 import { SESSION_COPY } from '../../shared/copy/session'
-import { env } from '../../env'
 import type { ApiError } from '../../shared/errors/ApiError'
 import { resolveErrorCopy } from '../../shared/errors/resolve'
 import { Button, fieldLabelClass, inputClass } from '../../shared/ui'
@@ -30,6 +30,7 @@ type LoginResponse = {
 type LoginLocationState = { readonly expired?: boolean; readonly from?: unknown } | null
 
 export function LoginScreen() {
+  const { slug: routeSlug } = useParams<{ slug?: string }>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -37,6 +38,7 @@ export function LoginScreen() {
   const [password, setPassword] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const setToken = useSessionStore((state) => state.setToken)
+  const persistedTenantSlug = useSessionStore((state) => state.tenantSlug)
   // owner-session spec's "An Authenticated Visitor Is Not Shown The Sign-In
   // Screen" (10.10/10.11), Note A's same `<Navigate replace/>` shape as
   // `RequireSession`, `Wizard.tsx` and `EditReservation.tsx`. Captured ONCE
@@ -58,14 +60,82 @@ export function LoginScreen() {
   // just opening the app".
   const showExpiredMessage = (location.state as LoginLocationState)?.expired === true
 
-  // D31: "the login route reads it from `?tenant=` if present, otherwise
-  // from the build-time `VITE_TENANT_SLUG`" -- resolved here, at submit
-  // time, and NEVER rendered as a field (the test above already proves no
+  // D31, extended by the tenant-from-url change (owner-approved plan,
+  // 2026-09-08): resolution order is now the `/login/:slug` URL path
+  // first, then `?tenant=` (unchanged, still a regression guard in
+  // `Login.test.tsx`), then the tenant slug PERSISTED in `useSessionStore`
+  // -- which itself already falls back to the build-time `VITE_TENANT_SLUG`
+  // when nothing has been persisted yet (`store.ts`'s own initial-state
+  // comment). Resolved here, at MOUNT (not submit time, per the effect just
+  // below), and NEVER rendered as a field (the test above already proves no
   // such field exists).
-  const tenantSlug = searchParams.get('tenant') ?? env.tenantSlug
+  const tenantSlug = routeSlug ?? searchParams.get('tenant') ?? persistedTenantSlug
+
+  // Persists whichever slug this mount resolved -- from ANY source above,
+  // not only a successful sign-in. This is what makes the lockout guard
+  // work: `client.ts`'s 401 interceptor redirects to a BARE `/login`, and
+  // the next mount here has no URL slug to read, only this persisted value
+  // (`store.ts`'s own `setTenantSlug`, same `localStorage` discipline as
+  // the token). Re-persisting an already-persisted value is a harmless
+  // no-op write, not a special case to guard against.
+  useEffect(() => {
+    // An EMPTY resolved slug is never persisted over a good one.
+    // `searchParams.get('tenant')` returns `null` when the parameter is
+    // absent but `''` when it is present-and-empty, and `??` only falls
+    // through on nullish values -- so `/login?tenant=` resolves to `''`,
+    // as does a first visit with no `VITE_TENANT_SLUG` set. Writing that
+    // through would erase the slug she last used and lock her out of the
+    // bare `/login` the 401 interceptor redirects to, which is the exact
+    // failure this persistence exists to prevent. Silent, too: the empty
+    // slug's own request still renders an honest not-found sentence, so
+    // nothing on screen would reveal that the stored slug had been lost.
+    if (tenantSlug === '') return
+    useSessionStore.getState().setTenantSlug(tenantSlug)
+  }, [tenantSlug])
+
+  // The screen's title is the tenant's REAL name from `GET
+  // /public/{slug}/contact` (`back/app/schemas/public.py`'s
+  // `PublicContact`) -- no auth required, the same public surface
+  // `AvailabilityPage.tsx` already reads. `tenantName` stays `null` while
+  // the request is in flight OR on any failure OTHER than 404 (a network
+  // hiccup does not, by itself, mean the tenant does not exist) -- the form
+  // below renders regardless, gated on `tenantNotFound` alone, so she is
+  // never blocked from typing while this resolves. A CONFIRMED 404 is the
+  // one case that replaces the form entirely: an unknown slug means every
+  // submission would be rejected with no way to explain why, so the plain
+  // not-found sentence below is both more honest and more useful than a
+  // dead form.
+  const [tenantName, setTenantName] = useState<string | null>(null)
+  const [tenantNotFound, setTenantNotFound] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    getPublicContact(tenantSlug)
+      .then((contact) => {
+        if (!cancelled) setTenantName(contact.name)
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return
+        const apiError = cause as ApiError
+        if (apiError.status === 404) setTenantNotFound(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [tenantSlug])
 
   if (wasAlreadyAuthenticated) {
     return <Navigate to="/inicio" replace />
+  }
+
+  if (tenantNotFound) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-page px-[26px] text-center">
+        <p className="text-lg text-muted">{SESSION_COPY.tenantNotFoundMessage}</p>
+      </div>
+    )
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -109,8 +179,7 @@ export function LoginScreen() {
   return (
     <div className="flex min-h-screen flex-col bg-page px-[26px] pt-[150px] pb-[60px]">
       <div className="mb-12 flex flex-col gap-2">
-        <div className="text-[34px] font-extrabold tracking-tight text-primary">{SESSION_COPY.title}</div>
-        <div className="text-lg text-muted">{SESSION_COPY.subtitle}</div>
+        <div className="text-[34px] font-extrabold tracking-tight text-primary">{tenantName}</div>
       </div>
       {showExpiredMessage ? <p className="mb-4 text-base text-warm">{SESSION_COPY.expiredMessage}</p> : null}
       {submitError !== null ? (

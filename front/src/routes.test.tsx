@@ -56,6 +56,13 @@ describe('routes', () => {
   beforeEach(() => {
     import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
     import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
+    // tenant-from-url change: `LoginScreen` now fetches `GET
+    // /public/{slug}/contact` on every mount. A default here covers every
+    // test in this file that mounts `/login` (directly or via a redirect)
+    // without caring about the resolved tenant name -- tests that DO care
+    // (none yet in this file) can still override with their own
+    // `server.use(contactHandler())` call, MSW's own last-registered-wins.
+    server.use(contactHandler())
   })
 
   afterEach(async () => {

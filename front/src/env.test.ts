@@ -56,4 +56,28 @@ describe('env', () => {
 
     expect('whatsappNumber' in env).toBe(false)
   })
+
+  // tenant-from-url change (owner-approved plan, 2026-09-08): the tenant now
+  // resolves at runtime from the URL (`/login/:slug`, `?tenant=`) and from
+  // the persisted slug in `useSessionStore` -- `VITE_TENANT_SLUG` is only
+  // the last-resort fallback, so a build with no such var configured must
+  // still boot. `VITE_API_BASE_URL` is deliberately UNCHANGED (still
+  // required, still throws) -- only the tenant slug's requirement relaxes.
+  it('does not throw when VITE_TENANT_SLUG is unset, unlike VITE_API_BASE_URL', async () => {
+    import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
+
+    await expect(import('./env')).resolves.toBeDefined()
+  })
+
+  // [TRIANGULATE]: the fallback value itself, not merely "did not throw" --
+  // an empty string, the same "no fabricated default" discipline D37 already
+  // applies to a configured value (never a fake slug like `'demo'`, which
+  // would silently point a fresh build at someone else's tenant).
+  it('exposes an empty string tenantSlug when VITE_TENANT_SLUG is unset', async () => {
+    import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
+
+    const { env } = await import('./env')
+
+    expect(env.tenantSlug).toBe('')
+  })
 })

@@ -76,6 +76,16 @@ describe('Wizard', () => {
   beforeEach(() => {
     import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
     import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
+    // tenant-from-url change: this file's own 5.30/10.22 test mounts the
+    // real `LoginScreen` (via a real 401 through the real router), which now
+    // fetches `GET /public/{slug}/contact` on mount -- a default here, not
+    // caring about the resolved name, matching `routes.test.tsx`'s own fix
+    // for the same fetch.
+    server.use(
+      http.get('http://localhost:8000/public/:slug/contact', () =>
+        HttpResponse.json({ name: 'Tenant', whatsapp: null }),
+      ),
+    )
   })
 
   afterEach(async () => {

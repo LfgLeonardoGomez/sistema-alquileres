@@ -30,16 +30,39 @@ import { server } from '../../test/setup'
 // 10.9(a)), and this fixture's job is only to prove WHERE the router ended
 // up (`router.state.location.pathname`), not to render each destination's
 // real screen.
+// tenant-from-url change (owner-approved plan, 2026-09-08): `/login/:slug`
+// is now the canonical owner entry point (D31), alongside the bare `/login`
+// every prior test in this file already mounts at. Both live in the SAME
+// router config here rather than a second helper -- an entry with no slug
+// segment matches the first, one with a slug matches the second, and every
+// existing call site below is unaffected.
 function renderLoginAt(Component: ComponentType, entry: string | { pathname: string; state?: unknown }) {
   const router = createMemoryRouter(
     [
       { path: '/login', Component },
+      { path: '/login/:slug', Component },
       { path: '*', Component: () => <p data-testid="destination" /> },
     ],
     { initialEntries: [entry] },
   )
   render(<RouterProvider router={router} />)
   return router
+}
+
+// tenant-from-url change: `LoginScreen` now fetches `GET
+// /public/{slug}/contact` on every mount to resolve the tenant's real name
+// (replacing the old hardcoded `SESSION_COPY.title`). A generic default
+// registered once in `beforeEach` below -- MSW's own last-registered-wins
+// override (matching `AvailabilityPage.test.tsx`'s established pattern for
+// the exact same endpoint) lets individual tests below still register a
+// more specific response (a real name, or a 404) without every other test
+// in this file needing to know or care about this fetch at all.
+function contactHandler(response: { readonly name: string; readonly whatsapp: string | null } | 404 = { name: 'Alquileres', whatsapp: null }) {
+  return http.get('http://localhost:8000/public/:slug/contact', () =>
+    response === 404
+      ? HttpResponse.json({ detail: 'Tenant not found', code: null }, { status: 404 })
+      : HttpResponse.json(response),
+  )
 }
 
 const TOKEN_STORAGE_KEY = 'owner-session-token'
@@ -71,6 +94,7 @@ describe('LoginScreen', () => {
     localStorage.clear()
     import.meta.env.VITE_API_BASE_URL = 'http://localhost:8000'
     import.meta.env.VITE_TENANT_SLUG = 'mar-del-tuyu-cabins'
+    server.use(contactHandler())
   })
 
   afterEach(() => {
@@ -337,5 +361,201 @@ describe('LoginScreen', () => {
       expect(await screen.findByLabelText(SESSION_COPY.emailLabel)).toBeInTheDocument()
       expect(screen.getByText(SESSION_COPY.expiredMessage)).toBeInTheDocument()
     })
+  })
+
+  // tenant-from-url change (owner-approved plan, 2026-09-08): `/login/:slug`
+  // is now the HIGHEST-priority source in the resolution order -- ahead of
+  // `?tenant=` and the persisted/build-time fallback both already proven
+  // above. Same proof shape as those two: assert against the REQUEST BODY.
+  describe('the /login/:slug URL path', () => {
+    it('authenticates against the tenant slug carried by the URL path', async () => {
+      let capturedBody: unknown
+      server.use(
+        http.post('http://localhost:8000/auth/login', async ({ request }) => {
+          capturedBody = await request.json()
+          return HttpResponse.json({ access_token: 'a.b.c', token_type: 'bearer' })
+        }),
+      )
+      const { LoginScreen } = await import('./LoginScreen')
+      const user = userEvent.setup()
+      renderLoginAt(LoginScreen, '/login/aya')
+
+      await user.type(screen.getByLabelText(SESSION_COPY.emailLabel), 'owner@example.com')
+      await user.type(screen.getByLabelText(SESSION_COPY.passwordLabel), 'correct-password-123')
+      await user.click(screen.getByRole('button', { name: SESSION_COPY.submit }))
+
+      expect(capturedBody).toMatchObject({ tenant_slug: 'aya' })
+
+      const { useSessionStore } = await import('./store')
+      useSessionStore.getState().clearToken()
+    })
+
+    // The lockout guard's own end-to-end proof: `client.ts`'s 401
+    // interceptor redirects to a BARE `/login`, with no slug in the path
+    // and no `?tenant=`. Written so it fails if persistence were dropped --
+    // with nothing persisted and no URL slug, resolution would fall through
+    // to the build-time `VITE_TENANT_SLUG` ('mar-del-tuyu-cabins'), not
+    // 'aya'.
+    it('still authenticates against the tenant she last used after a 401 redirects her to a bare /login', async () => {
+      let capturedBody: unknown
+      server.use(
+        http.post('http://localhost:8000/auth/login', async ({ request }) => {
+          capturedBody = await request.json()
+          return HttpResponse.json({ access_token: 'a.b.c', token_type: 'bearer' })
+        }),
+      )
+      const { LoginScreen } = await import('./LoginScreen')
+
+      // First mount: at `/login/aya`, the same shape the owner's bookmarked
+      // entry point takes. Waiting for the resolved tenant name proves the
+      // slug actually reached the API -- and gives the persistence effect a
+      // chance to run -- before this mount is torn down.
+      const first = render(
+        <RouterProvider
+          router={createMemoryRouter(
+            [
+              { path: '/login', Component: LoginScreen },
+              { path: '/login/:slug', Component: LoginScreen },
+            ],
+            { initialEntries: ['/login/aya'] },
+          )}
+        />,
+      )
+      await screen.findByText('Alquileres')
+      first.unmount()
+
+      // Second mount: the EXACT shape `client.ts`'s 401 interceptor leaves
+      // behind -- a bare `/login`, nothing in the path, nothing in the
+      // query. A fresh component instance, so nothing but the persisted
+      // store value can be carrying the slug forward. A catch-all
+      // destination route is required here (matching `renderLoginAt`'s own
+      // fixture) so a successful sign-in's own `navigate(...)` call has
+      // somewhere real to land -- otherwise the router itself throws once
+      // the submit resolves.
+      render(
+        <RouterProvider
+          router={createMemoryRouter(
+            [
+              { path: '/login', Component: LoginScreen },
+              { path: '/login/:slug', Component: LoginScreen },
+              { path: '*', Component: () => <p data-testid="destination" /> },
+            ],
+            { initialEntries: ['/login'] },
+          )}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.type(screen.getByLabelText(SESSION_COPY.emailLabel), 'owner@example.com')
+      await user.type(screen.getByLabelText(SESSION_COPY.passwordLabel), 'correct-password-123')
+      await user.click(screen.getByRole('button', { name: SESSION_COPY.submit }))
+
+      // DOM evidence that the whole async chain (submit -> setToken ->
+      // navigate) actually settled, not merely that the request fired --
+      // this codebase's own rule against asserting on `router.state.
+      // location.pathname` alone (the router's location commits before
+      // React re-renders).
+      expect(await screen.findByTestId('destination')).toBeInTheDocument()
+      expect(capturedBody).toMatchObject({ tenant_slug: 'aya' })
+
+      const { useSessionStore } = await import('./store')
+      useSessionStore.getState().clearToken()
+    })
+
+    // `searchParams.get('tenant')` returns `null` when the parameter is
+    // ABSENT but `''` when it is present-and-empty, and `??` only falls
+    // through on nullish values -- so `/login?tenant=` resolves to an empty
+    // slug. That empty value must not be persisted over a good one: a
+    // truncated or mis-copied link would otherwise erase the slug she last
+    // used and lock her out of the bare `/login` the 401 interceptor
+    // redirects to -- the exact failure the persistence above exists to
+    // prevent. The damage is silent (the empty slug's own 404 still renders
+    // an honest not-found sentence), which is why it needs a test rather
+    // than a reviewer noticing.
+    it('does not let an empty ?tenant= erase the slug she last used', async () => {
+      const { LoginScreen } = await import('./LoginScreen')
+      const { useSessionStore } = await import('./store')
+
+      const first = render(
+        <RouterProvider
+          router={createMemoryRouter(
+            [
+              { path: '/login', Component: LoginScreen },
+              { path: '/login/:slug', Component: LoginScreen },
+            ],
+            { initialEntries: ['/login/aya'] },
+          )}
+        />,
+      )
+      await screen.findByText('Alquileres')
+      expect(useSessionStore.getState().tenantSlug).toBe('aya')
+      first.unmount()
+
+      render(
+        <RouterProvider
+          router={createMemoryRouter(
+            [
+              { path: '/login', Component: LoginScreen },
+              { path: '/login/:slug', Component: LoginScreen },
+            ],
+            { initialEntries: ['/login?tenant='] },
+          )}
+        />,
+      )
+
+      // Awaiting a rendered field commits this mount and flushes its
+      // effects, so the assertion below is about what those effects CHOSE
+      // to persist -- not about a mount that quietly did nothing yet. (The
+      // not-found sentence is deliberately not the signal here: an empty
+      // slug produces `/public//contact`, which MSW's `:slug` pattern does
+      // not match at all, so no 404 ever reaches the handler in this
+      // environment. Production differs -- FastAPI does not match an empty
+      // path segment either and returns a real 404 -- but a test must not
+      // depend on a response it never receives.)
+      await screen.findByLabelText(SESSION_COPY.emailLabel)
+      expect(useSessionStore.getState().tenantSlug).toBe('aya')
+    })
+  })
+
+  // tenant-from-url change: `GET /public/{slug}/contact` 404s for an unknown
+  // slug (`back/app/api/deps.py`'s `PublicSessionDep`) -- rendered as a
+  // plain not-found sentence INSTEAD of the sign-in form, never a form that
+  // silently rejects every attempt.
+  it('shows a not-found sentence, not the sign-in form, for an unknown tenant slug', async () => {
+    server.use(contactHandler(404))
+    const { LoginScreen } = await import('./LoginScreen')
+    renderLoginAt(LoginScreen, '/login/no-existe')
+
+    expect(await screen.findByText(SESSION_COPY.tenantNotFoundMessage)).toBeInTheDocument()
+    expect(screen.queryByLabelText(SESSION_COPY.emailLabel)).not.toBeInTheDocument()
+  })
+
+  // tenant-from-url change: the screen's title is now the tenant's REAL name
+  // from the API -- and the two strings this whole change exists to remove
+  // (`pattern/tenant-data-in-copy`'s third instance) must never render
+  // anywhere, for ANY tenant, not just the one this test names.
+  it('shows the tenant’s real name from the API as the title, and the old hardcoded business name/cabin list render nowhere', async () => {
+    server.use(contactHandler({ name: 'Cabañas del Río', whatsapp: null }))
+    const { LoginScreen } = await import('./LoginScreen')
+    renderLoginAt(LoginScreen, '/login/rio')
+
+    expect(await screen.findByText('Cabañas del Río')).toBeInTheDocument()
+    expect(screen.queryByText('Alquileres AyA')).not.toBeInTheDocument()
+    expect(screen.queryByText('Casa Azul y Casa Dos Aguas')).not.toBeInTheDocument()
+  })
+
+  // The form must never be blocked on the contact fetch -- she can start
+  // typing immediately, before the tenant's name has even resolved.
+  it('renders the input fields immediately, before the tenant name has resolved', async () => {
+    server.use(
+      http.get('http://localhost:8000/public/:slug/contact', async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        return HttpResponse.json({ name: 'Alquileres', whatsapp: null })
+      }),
+    )
+    const { LoginScreen } = await import('./LoginScreen')
+    renderLoginAt(LoginScreen, '/login/aya')
+
+    expect(screen.getByLabelText(SESSION_COPY.emailLabel)).toBeInTheDocument()
+    expect(screen.getByLabelText(SESSION_COPY.passwordLabel)).toBeInTheDocument()
   })
 })

@@ -120,4 +120,46 @@ describe('session store', () => {
 
     expect(useSessionStore.getState()).toMatchObject({ token: null, isAuthenticated: false })
   })
+
+  // tenant-from-url change (owner-approved plan, 2026-09-08): reviving the
+  // dead `tenantSlug` field -- `setTenantSlug` persists it to `localStorage`
+  // via the SAME try/catch discipline `persistToken` already established
+  // above, so `LoginScreen` can recover it after a 401 lockout redirect to a
+  // bare `/login` (D31's own resolution order's third source, after the URL
+  // path and `?tenant=`).
+  const TENANT_SLUG_STORAGE_KEY = 'owner-session-tenant-slug'
+
+  it('persists a newly resolved tenant slug via setTenantSlug', async () => {
+    const { useSessionStore } = await import('./store')
+
+    useSessionStore.getState().setTenantSlug('aya')
+
+    expect(localStorage.getItem(TENANT_SLUG_STORAGE_KEY)).toBe('aya')
+    expect(useSessionStore.getState().tenantSlug).toBe('aya')
+  })
+
+  // [TRIANGULATE]: a SECOND slug, proving this is a real read/write path
+  // and not a value hardcoded to the first test's own input.
+  it('starts from a slug already persisted in localStorage, overriding the build-time default', async () => {
+    localStorage.setItem(TENANT_SLUG_STORAGE_KEY, 'casa-del-rio')
+
+    const { useSessionStore } = await import('./store')
+
+    expect(useSessionStore.getState().tenantSlug).toBe('casa-del-rio')
+  })
+
+  // The lockout guard's own structural proof: `clearToken` (the 401
+  // interceptor's action) must NOT wipe the persisted tenant slug -- only
+  // the token identifies WHO she is; the slug identifies WHICH tenant, and
+  // that fact does not become false just because her session expired.
+  it('keeps the persisted tenant slug when clearToken runs', async () => {
+    const { useSessionStore } = await import('./store')
+    useSessionStore.getState().setTenantSlug('aya')
+    useSessionStore.getState().setToken(tokenWithExp(farFutureEpochSeconds()))
+
+    useSessionStore.getState().clearToken()
+
+    expect(localStorage.getItem(TENANT_SLUG_STORAGE_KEY)).toBe('aya')
+    expect(useSessionStore.getState().tenantSlug).toBe('aya')
+  })
 })

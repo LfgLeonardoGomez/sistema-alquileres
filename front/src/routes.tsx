@@ -208,6 +208,24 @@ const appRoutes: RouteObject[] = [
       return { Component: LoginScreen }
     },
   },
+  // tenant-from-url change (owner-approved plan, 2026-09-08): the canonical
+  // owner entry point. Same `LoginScreen`, same lazy chunk, one more path
+  // pointing at it -- `LoginScreen` itself reads the slug via `useParams()`
+  // (task 2.34's own precedent for `AvailabilityPage`), so this route wires
+  // no prop. Deliberately NOT extended to any route under
+  // `authenticatedRoutes` below: the JWT already carries `tenant_id`
+  // (`back/app/api/routers/auth.py`), so a slug in an authenticated URL
+  // would be a second, potentially disagreeing source of truth for the
+  // same fact -- one authority per fact, matching D31's original framing
+  // for why the public tree carries the slug and the authenticated tree
+  // never has.
+  {
+    path: '/login/:slug',
+    lazy: async () => {
+      const { LoginScreen } = await import('./app/session/LoginScreen')
+      return { Component: LoginScreen }
+    },
+  },
   {
     Component: RequireSession,
     children: authenticatedRoutes,
