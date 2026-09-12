@@ -1,10 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>front</title>
+
+    <title>MIO</title>
+
+    <!--
+      PWA. `theme_color` is repeated here as a meta tag on purpose: the
+      manifest value paints the installed app's status bar, this one paints
+      the browser UI when the same page is opened as an ordinary tab.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f6f6fb" />
+
+    <!--
+      iOS ignores the manifest for these three. Without them, "Add to Home
+      Screen" produces an icon labelled with the <title> that opens inside
+      Safari's chrome instead of standalone.
+    -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="MIO" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <div id="root"></div>

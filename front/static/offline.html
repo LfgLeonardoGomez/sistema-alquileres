@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f6fb" />
+    <title>MIO · sin conexión</title>
+    <!--
+      Standalone on purpose. This page is the only thing the service worker
+      caches, so it must not reference a stylesheet, a font file, a script or
+      an image — any of those would be a versioned URL that can 404 after a
+      deploy, in the exact situation where nothing else is reachable either.
+      The font stack falls back to the system UI face rather than loading
+      Nunito Sans.
+    -->
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 24px;
+        box-sizing: border-box;
+        background: #f6f6fb;
+        color: #37384a;
+        font-family: 'Nunito Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
+        text-align: center;
+        -webkit-font-smoothing: antialiased;
+      }
+      .mark {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        background: #6b72d6;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 19px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        margin-bottom: 8px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.3px;
+      }
+      p {
+        margin: 0;
+        max-width: 30ch;
+        font-size: 16px;
+        line-height: 1.5;
+        color: #6e7085;
+      }
+      button {
+        margin-top: 12px;
+        border: 0;
+        border-radius: 999px;
+        padding: 13px 28px;
+        background: #6b72d6;
+        color: #fff;
+        font: inherit;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 2px solid #37384a;
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mark">MIO</div>
+    <h1>Sin conexión</h1>
+    <p>No pudimos conectarnos. Revisá el wifi o los datos del celular y volvé a intentar.</p>
+    <button type="button" onclick="location.reload()">Reintentar</button>
+  </body>
+</html>
